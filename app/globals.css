@@ -1,0 +1,40 @@
+:root {
+  --accent: #3CF08F;
+  --bg: #070B12;
+  --panel: #0D1421;
+  --line: #1F2A3D;
+  --hair: #141C2A;
+  --text: #E8EDF4;
+  --sub: #A8B4C6;
+  --muted: #8D99AC;
+  --dim: #64708A;
+  --red: #FF8C7F;
+  --amber: #F0C25C;
+  --blue: #5FA8FF;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Space Grotesk', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { color: var(--text); }
+
+input, button, select { font-family: inherit; }
+input::placeholder { color: #4C5872; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: #1F2A3D; border-radius: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes ww-in { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes ww-spin { to { transform: rotate(360deg); } }
+@keyframes ww-blip { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
+@keyframes ww-dash { to { stroke-dashoffset: -24; } }
