@@ -33,12 +33,24 @@ const glass = {
   boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
 };
 
-const REJECT_REASONS = [
+// Rejections a custodian could plausibly return for THIS order. Anything
+// side- or type-specific is only offered to orders it can actually apply to,
+// so a BUY never draws "insufficient position" and a MARKET order never draws
+// a limit-price rejection.
+const REJECT_ANY = [
   'Custody account not recognised at this custodian',
   'Instrument not tradable on the connected venue',
-  'Insufficient position for SELL',
   'Order size exceeds the venue block limit',
+  'ISIN not in the custodian instrument universe',
 ];
+
+function rejectReasonsFor(row) {
+  const list = [...REJECT_ANY];
+  if (row.side === 'BUY') list.push('Insufficient cash for BUY');
+  if (row.side === 'SELL') list.push('Insufficient position for SELL');
+  if (row.orderType === 'LIMIT') list.push('Limit price outside the permitted price band');
+  return list;
+}
 
 const FILTER_TONE = { BUY: C.accent, SELL: C.blue, REJECTED: C.red, WARNINGS: C.amber };
 const FILTER_LABEL = {
@@ -276,6 +288,7 @@ export default function Page() {
       const frac = n <= 1 ? 1 : (i + 1) / n;
       const jitter = 0.7 + (hashString(r.isin + 's') % 55) / 100;   // 0.70 – 1.25
       const end = now + 600 + Math.min(totalMs, totalMs * frac * jitter);
+      const pool = rejectReasonsFor(r);
       plan[r.id] = {
         status: 'pending',
         filledQty: 0,
@@ -284,7 +297,7 @@ export default function Page() {
         start: now + 500,
         end,
         willReject: rejected.has(r.id),
-        reason: rejected.has(r.id) ? REJECT_REASONS[hashString(r.isin) % REJECT_REASONS.length] : '',
+        reason: rejected.has(r.id) ? pool[hashString(r.isin + r.side) % pool.length] : '',
         execId: '',
         completedAt: '',
       };
