@@ -1,0 +1,583 @@
+'use client';
+
+import { useCallback, useMemo, useRef, useState } from 'react';
+import { BANKS, COLUMNS, downloadTemplate, parseFile, validate, qty } from '../lib/orders';
+
+const C = {
+  bg: '#070B12', panel: '#0D1421', line: '#1F2A3D', hair: '#141C2A',
+  text: '#E8EDF4', sub: '#A8B4C6', muted: '#8D99AC', dim: '#64708A',
+  accent: '#3CF08F', red: '#FF8C7F', amber: '#F0C25C', blue: '#5FA8FF',
+};
+const mono = "'IBM Plex Mono', monospace";
+const GRID = COLUMNS.map(c => c.width).join(' ');
+
+const card = { border: '1px solid ' + C.line, borderRadius: 10, background: C.panel };
+const btn = {
+  all: 'unset', boxSizing: 'border-box', cursor: 'pointer', textAlign: 'center',
+  padding: '12px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+};
+const primary = { ...btn, background: C.accent, color: '#06090F' };
+const ghost = { ...btn, border: '1px solid ' + C.line, color: C.text, fontWeight: 500 };
+
+function Logo() {
+  return (
+    <svg width="30" height="20" viewBox="0 0 36 24" aria-hidden="true">
+      <path d="M4 7 L 10.5 19 L 17 7 L 23.5 19 L 30 7" fill="none" stroke={C.text} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M4 7 L 29.4 7" fill="none" stroke={C.accent} strokeWidth="3.2" strokeLinecap="round" />
+      <path d="M28.1 3.5 L 30 7" fill="none" stroke={C.accent} strokeWidth="3.2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function Stepper({ step }) {
+  const steps = ['Upload', 'Validate', 'Confirm & route'];
+  const at = { start: 0, validate: 1, confirm: 2 }[step] ?? 0;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {steps.map((label, i) => (
+        <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: i <= at ? 1 : 0.4 }}>
+            <span style={{
+              width: 20, height: 20, borderRadius: '50%', display: 'grid', placeItems: 'center',
+              fontFamily: mono, fontSize: 10,
+              border: '1px solid ' + (i <= at ? C.accent : C.line),
+              background: i < at ? C.accent : 'transparent',
+              color: i < at ? '#06090F' : (i === at ? C.accent : C.dim),
+            }}>{i < at ? '✓' : '0' + (i + 1)}</span>
+            <span style={{ fontSize: 13, fontWeight: i === at ? 600 : 400, color: i === at ? C.text : C.muted }}>{label}</span>
+          </div>
+          {i < steps.length - 1 && <span style={{ width: 26, height: 1, background: C.line }} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Stat({ label, value, tone }) {
+  return (
+    <div style={{ ...card, padding: '14px 16px', minWidth: 132, flex: '1 1 132px' }}>
+      <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.1em', color: C.dim, marginBottom: 8 }}>{label}</div>
+      <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1, color: tone || C.text }}>{value}</div>
+    </div>
+  );
+}
+
+export default function Page() {
+  const [step, setStep] = useState('start');
+  const [rows, setRows] = useState([]);
+  const [fileName, setFileName] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [headerError, setHeaderError] = useState(null);
+  const [dragging, setDragging] = useState(false);
+  const [bank, setBank] = useState('');
+
+  const [gate, setGate] = useState(false);
+  const [email, setEmail] = useState('');
+  const [gateBanks, setGateBanks] = useState([]);
+  const [bankInput, setBankInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const [gateError, setGateError] = useState('');
+  const [sent, setSent] = useState(false);
+
+  const fileRef = useRef(null);
+
+  const { issues, errors, warnings } = useMemo(() => validate(rows), [rows]);
+
+  const summary = useMemo(() => {
+    const buys = rows.filter(r => r.side === 'BUY');
+    const sells = rows.filter(r => r.side === 'SELL');
+    return {
+      total: rows.length,
+      buys: buys.length,
+      sells: sells.length,
+      buyQty: buys.reduce((a, r) => a + qty(r), 0),
+      sellQty: sells.reduce((a, r) => a + qty(r), 0),
+      instruments: new Set(rows.map(r => r.isin)).size,
+      accounts: new Set(rows.map(r => r.account).filter(Boolean)).size,
+    };
+  }, [rows]);
+
+  const take = useCallback(async file => {
+    if (!file) return;
+    setBusy(true);
+    setHeaderError(null);
+    setFileName(file.name);
+    try {
+      const result = await parseFile(file);
+      setHeaderError(result.headerError);
+      setRows(result.rows);
+      if (result.rows.length) setStep('validate');
+    } catch (err) {
+      console.error(err);
+      setHeaderError('That file could not be read. Use .xlsx, .xls or .csv.');
+      setRows([]);
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const setCell = (id, key, value) =>
+    setRows(rs => rs.map(r => (r.id === id ? { ...r, [key]: key === 'side' || key === 'ccy' || key === 'isin' ? value.toUpperCase() : value } : r)));
+
+  const reset = () => {
+    setStep('start'); setRows([]); setFileName(''); setHeaderError(null); setBank('');
+    setGate(false); setSent(false); setEmail(''); setGateBanks([]); setBankInput(''); setGateError('');
+  };
+
+  const openGate = () => {
+    setGateBanks(bank ? [bank] : []);
+    setGateError('');
+    setGate(true);
+  };
+
+  const addBank = name => {
+    const n = (name || '').trim();
+    if (n && !gateBanks.includes(n)) setGateBanks(b => [...b, n]);
+    setBankInput('');
+  };
+
+  const submitLead = async e => {
+    e.preventDefault();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      setGateError('Enter a valid work email address.');
+      return;
+    }
+    const banks = bankInput.trim() && !gateBanks.includes(bankInput.trim()) ? [...gateBanks, bankInput.trim()] : gateBanks;
+    setSending(true);
+    setGateError('');
+    try {
+      const res = await fetch('/api/lead', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: email.trim(), banks, orderCount: rows.length, source: 'app-route' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.ok) throw new Error(data.error || 'Request failed');
+      setSent(true);
+    } catch (err) {
+      setGateError(err.message === 'Failed to fetch' ? 'Network problem. Try again.' : err.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <header style={{
+        position: 'sticky', top: 0, zIndex: 40, background: 'rgba(7, 11, 18, 0.85)',
+        backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + C.hair,
+      }}>
+        <div style={{ maxWidth: 1320, margin: '0 auto', padding: '13px 22px', display: 'flex', alignItems: 'center', gap: 18 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
+            <Logo />
+            <span>Wealth<span style={{ color: C.accent }}>Wire</span></span>
+          </div>
+          <span style={{
+            fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: C.accent,
+            border: '1px solid ' + C.accent + '55', borderRadius: 5, padding: '3px 7px',
+          }}>DEMO</span>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20 }}>
+            <span style={{ fontFamily: mono, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>NOTHING IS SENT TO ANY BANK</span>
+            <a href="https://wealthwire.ch" style={{ fontSize: 13, color: C.sub }}>wealthwire.ch</a>
+          </div>
+        </div>
+      </header>
+
+      <div style={{ maxWidth: 1320, margin: '0 auto', padding: '26px 22px 80px', width: '100%', flex: 1 }}>
+        <div style={{ marginBottom: 26 }}><Stepper step={step} /></div>
+
+        {step === 'start' && (
+          <div style={{ animation: 'ww-in 0.4s ease both' }}>
+            <div style={{ maxWidth: 700, marginBottom: 30 }}>
+              <h1 style={{ margin: '0 0 12px', fontSize: 'clamp(26px, 3.4vw, 38px)', letterSpacing: '-0.025em', lineHeight: 1.1 }}>
+                Take an order sheet all the way to routed.
+              </h1>
+              <p style={{ margin: 0, fontSize: 16, lineHeight: 1.55, color: C.sub }}>
+                Download the template, fill it with your own orders, and upload it. WealthWire checks it the way it
+                would before sending anything over FIX. No sign-in, no data leaves this browser until you ask us to
+                get in touch.
+              </p>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 18 }}>
+              <div style={{ ...card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
+                <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 01</div>
+                <div style={{ fontSize: 17, fontWeight: 600 }}>Get the Excel template</div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.55, color: C.muted }}>
+                  Nine columns, four example rows, and a sheet explaining every field and every check we run.
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, margin: '2px 0 4px' }}>
+                  {COLUMNS.map(c => (
+                    <span key={c.key} style={{
+                      fontFamily: mono, fontSize: 10.5, color: c.required ? C.sub : C.dim,
+                      border: '1px solid ' + C.line, borderRadius: 5, padding: '4px 7px',
+                    }}>{c.label}{c.required ? ' *' : ''}</span>
+                  ))}
+                </div>
+                <button type="button" onClick={downloadTemplate} style={{ ...ghost, marginTop: 'auto' }}>
+                  Download template (.xlsx)
+                </button>
+              </div>
+
+              <div
+                onDragOver={e => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={e => { e.preventDefault(); setDragging(false); take(e.dataTransfer.files && e.dataTransfer.files[0]); }}
+                style={{
+                  ...card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14,
+                  borderStyle: 'dashed', borderColor: dragging ? C.accent : C.line,
+                  background: dragging ? 'rgba(60, 240, 143, 0.05)' : C.panel,
+                }}
+              >
+                <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 02</div>
+                <div style={{ fontSize: 17, fontWeight: 600 }}>Upload your order sheet</div>
+                <div style={{ fontSize: 13.5, lineHeight: 1.55, color: C.muted }}>
+                  Drop the file here, or pick it from your machine. .xlsx, .xls and .csv all work.
+                </div>
+                {headerError && (
+                  <div style={{
+                    display: 'flex', gap: 9, padding: '11px 13px', borderRadius: 7,
+                    border: '1px solid ' + C.red + '55', background: C.red + '12', fontSize: 13, color: C.red, lineHeight: 1.5,
+                  }}>{headerError}</div>
+                )}
+                <input
+                  ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
+                  onChange={e => take(e.target.files && e.target.files[0])}
+                />
+                <button
+                  type="button" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}
+                  style={{ ...primary, marginTop: 'auto', opacity: busy ? 0.6 : 1 }}
+                >
+                  {busy ? 'Reading ' + fileName + '…' : 'Choose file'}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {step === 'validate' && (
+          <div style={{ animation: 'ww-in 0.4s ease both' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
+              <div>
+                <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>Validate and review</h2>
+                <div style={{ fontFamily: mono, fontSize: 11.5, color: C.dim }}>
+                  {fileName} · {rows.length} ORDER{rows.length === 1 ? '' : 'S'}
+                </div>
+              </div>
+              <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                <span style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5,
+                  color: errors ? C.red : C.accent, border: '1px solid ' + (errors ? C.red : C.accent) + '55',
+                  background: (errors ? C.red : C.accent) + '12', borderRadius: 6, padding: '6px 11px',
+                }}>
+                  {errors ? errors + ' blocking error' + (errors === 1 ? '' : 's') : 'No blocking errors'}
+                </span>
+                {warnings > 0 && (
+                  <span style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: C.amber,
+                    border: '1px solid ' + C.amber + '55', background: C.amber + '12', borderRadius: 6, padding: '6px 11px',
+                  }}>{warnings} warning{warnings === 1 ? '' : 's'}</span>
+                )}
+                <button type="button" onClick={reset} style={ghost}>Start over</button>
+                <button
+                  type="button" disabled={errors > 0 || !rows.length} onClick={() => setStep('confirm')}
+                  style={{ ...primary, opacity: errors > 0 || !rows.length ? 0.35 : 1, cursor: errors > 0 ? 'not-allowed' : 'pointer' }}
+                >
+                  Continue to confirm
+                </button>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, lineHeight: 1.55, maxWidth: 780 }}>
+              Hard errors block routing, warnings do not. Edit any cell to fix it — the row revalidates as you type.
+            </div>
+
+            <div style={{ ...card, overflow: 'hidden' }}>
+              <div style={{ overflowX: 'auto' }}>
+                <div style={{ minWidth: 1080 }}>
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: '34px ' + GRID + ' 34px', gap: 10,
+                    padding: '10px 15px', borderBottom: '1px solid ' + C.line,
+                    fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
+                  }}>
+                    <div>#</div>
+                    {COLUMNS.map(c => <div key={c.key} style={{ textAlign: c.align === 'right' ? 'right' : 'left' }}>{c.label.toUpperCase()}</div>)}
+                    <div />
+                  </div>
+
+                  {rows.map((row, i) => {
+                    const rowIssues = issues[row.id] || {};
+                    const bad = Object.values(rowIssues).some(v => v.level === 'error');
+                    return (
+                      <div key={row.id} style={{
+                        display: 'grid', gridTemplateColumns: '34px ' + GRID + ' 34px', gap: 10,
+                        padding: '4px 15px', borderBottom: '1px solid ' + C.hair, alignItems: 'center',
+                        background: bad ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
+                      }}>
+                        <div style={{ fontFamily: mono, fontSize: 11, color: bad ? C.red : '#4C5872' }}>{i + 1}</div>
+                        {COLUMNS.map(c => {
+                          const issue = rowIssues[c.key];
+                          return (
+                            <input
+                              key={c.key}
+                              value={row[c.key]}
+                              title={issue ? issue.message : ''}
+                              onChange={e => setCell(row.id, c.key, e.target.value)}
+                              style={{
+                                width: '100%', background: issue ? (issue.level === 'error' ? C.red + '1A' : C.amber + '14') : 'transparent',
+                                border: '1px solid ' + (issue ? (issue.level === 'error' ? C.red + '99' : C.amber + '77') : 'transparent'),
+                                borderRadius: 5, padding: '7px 8px', outline: 'none',
+                                color: issue ? (issue.level === 'error' ? C.red : C.amber) : (c.mono ? C.sub : C.text),
+                                fontFamily: c.mono ? mono : 'inherit',
+                                fontSize: c.mono ? 12 : 13,
+                                textAlign: c.align === 'right' ? 'right' : 'left',
+                              }}
+                            />
+                          );
+                        })}
+                        <button
+                          type="button" aria-label="Remove row"
+                          onClick={() => setRows(rs => rs.filter(r => r.id !== row.id))}
+                          style={{ all: 'unset', cursor: 'pointer', color: C.dim, lineHeight: 0, padding: 6 }}
+                        >
+                          <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 2.5 L 9.5 9.5 M 9.5 2.5 L 2.5 9.5" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {(errors > 0 || warnings > 0) && (
+              <div style={{ ...card, marginTop: 16, padding: '4px 0' }}>
+                {rows.map((row, i) => {
+                  const rowIssues = issues[row.id];
+                  if (!rowIssues) return null;
+                  return Object.entries(rowIssues).map(([field, issue]) => (
+                    <div key={row.id + field} style={{
+                      display: 'flex', gap: 12, alignItems: 'baseline', padding: '9px 16px',
+                      borderBottom: '1px solid ' + C.hair, fontSize: 13,
+                    }}>
+                      <span style={{ fontFamily: mono, fontSize: 11, color: C.dim, minWidth: 52 }}>ROW {i + 1}</span>
+                      <span style={{ color: issue.level === 'error' ? C.red : C.amber, minWidth: 68, fontFamily: mono, fontSize: 11 }}>
+                        {issue.level === 'error' ? 'ERROR' : 'WARNING'}
+                      </span>
+                      <span style={{ color: C.sub }}>{issue.message}</span>
+                    </div>
+                  ));
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {step === 'confirm' && (
+          <div style={{ animation: 'ww-in 0.4s ease both' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+              <div>
+                <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>Confirm and route</h2>
+                <div style={{ fontFamily: mono, fontSize: 11.5, color: C.dim }}>THE LAST SCREEN BEFORE ORDERS LEAVE THE BUILDING</div>
+              </div>
+              <button type="button" onClick={() => setStep('validate')} style={{ ...ghost, marginLeft: 'auto' }}>Back to validation</button>
+            </div>
+
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
+              <Stat label="ORDERS" value={summary.total} />
+              <Stat label="BUY" value={summary.buys} tone={C.accent} />
+              <Stat label="SELL" value={summary.sells} tone={C.blue} />
+              <Stat label="INSTRUMENTS" value={summary.instruments} />
+              <Stat label="ACCOUNTS" value={summary.accounts} />
+              <Stat label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text} />
+            </div>
+
+            <div style={{ ...card, padding: 20, marginBottom: 18 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Route this basket to</div>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>
+                Pick the custodian that holds these accounts. In the live product this is a FIX session; here it only
+                tells us which bank you need first.
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                {BANKS.map(b => (
+                  <button
+                    key={b} type="button" onClick={() => setBank(b)}
+                    style={{
+                      all: 'unset', cursor: 'pointer', padding: '9px 14px', borderRadius: 7, fontSize: 13.5,
+                      border: '1px solid ' + (bank === b ? C.accent : C.line),
+                      background: bank === b ? C.accent + '18' : 'transparent',
+                      color: bank === b ? C.accent : C.sub,
+                    }}
+                  >{b}</button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ ...card, overflow: 'hidden', marginBottom: 22 }}>
+              <div style={{ padding: '12px 16px', borderBottom: '1px solid ' + C.line, fontSize: 13.5, fontWeight: 600 }}>
+                Orders in this basket
+              </div>
+              <div style={{ overflowX: 'auto' }}>
+                <div style={{ minWidth: 760 }}>
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 1fr', gap: 10,
+                    padding: '9px 16px', borderBottom: '1px solid ' + C.line,
+                    fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
+                  }}>
+                    <div>#</div><div>INSTRUMENT</div><div>ISIN</div><div>SIDE</div><div style={{ textAlign: 'right' }}>QUANTITY</div><div>TYPE</div><div>CUSTODY ACCOUNT</div>
+                  </div>
+                  {rows.map((row, i) => (
+                    <div key={row.id} style={{
+                      display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 1fr', gap: 10,
+                      padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
+                    }}>
+                      <div style={{ fontFamily: mono, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
+                      <div>{row.instrument}</div>
+                      <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.isin}</div>
+                      <div style={{ fontFamily: mono, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
+                      <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{row.quantity}</div>
+                      <div style={{ fontSize: 12, color: C.muted }}>{row.orderType}{row.limit ? ' ' + row.limit : ''}</div>
+                      <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.account}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <button
+                type="button" onClick={openGate} disabled={!bank}
+                style={{ ...primary, padding: '15px 26px', fontSize: 15, opacity: bank ? 1 : 0.35, cursor: bank ? 'pointer' : 'not-allowed' }}
+              >
+                Route {summary.total} order{summary.total === 1 ? '' : 's'} via FIX
+              </button>
+              <span style={{ fontSize: 13, color: C.dim }}>
+                {bank ? 'Routing is disabled in this demo — nothing reaches ' + bank + '.' : 'Pick a custodian bank first.'}
+              </span>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {gate && (
+        <div
+          onClick={e => { if (e.target === e.currentTarget && !sending) setGate(false); }}
+          style={{
+            position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(4, 7, 12, 0.78)',
+            backdropFilter: 'blur(6px)', display: 'grid', placeItems: 'center', padding: 20,
+          }}
+        >
+          <div style={{
+            ...card, width: '100%', maxWidth: 520, padding: 28, background: '#0B1220',
+            boxShadow: '0 40px 100px rgba(0,0,0,0.6)', animation: 'ww-in 0.25s ease both',
+          }}>
+            {!sent ? (
+              <form onSubmit={submitLead}>
+                <div style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.14em', color: C.accent, marginBottom: 12 }}>
+                  ONE STEP LEFT
+                </div>
+                <h3 style={{ margin: '0 0 10px', fontSize: 22, letterSpacing: '-0.02em' }}>
+                  Your basket is ready to route.
+                </h3>
+                <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.55, color: C.sub }}>
+                  Live FIX sessions open with the first customers. Leave your work email and the custodians you need,
+                  and you go on the early-access list — we prioritise banks by what people ask for.
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <input
+                    type="email" value={email} placeholder="Work email" autoFocus
+                    onChange={e => { setEmail(e.target.value); setGateError(''); }}
+                    style={{
+                      width: '100%', background: '#070B12', border: '1px solid ' + C.line, borderRadius: 8,
+                      padding: '13px 14px', fontSize: 15, color: C.text, outline: 'none',
+                    }}
+                  />
+
+                  <div style={{
+                    display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', width: '100%',
+                    background: '#070B12', border: '1px solid ' + C.line, borderRadius: 8, padding: '9px 10px', minHeight: 46,
+                  }}>
+                    {gateBanks.map(b => (
+                      <span key={b} style={{
+                        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 8px 5px 11px', borderRadius: 6,
+                        background: C.accent + '1F', border: '1px solid ' + C.accent + '66', color: C.accent, fontSize: 13,
+                      }}>
+                        {b}
+                        <button type="button" aria-label="Remove" onClick={() => setGateBanks(list => list.filter(x => x !== b))} style={{ all: 'unset', cursor: 'pointer', lineHeight: 0 }}>
+                          <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 2.5 L 9.5 9.5 M 9.5 2.5 L 2.5 9.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
+                        </button>
+                      </span>
+                    ))}
+                    <input
+                      value={bankInput}
+                      placeholder={gateBanks.length ? 'Another bank…' : 'Which custodian banks?'}
+                      onChange={e => setBankInput(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' || e.key === 'Tab') {
+                          if (bankInput.trim()) { e.preventDefault(); addBank(bankInput); }
+                        } else if (e.key === 'Backspace' && !bankInput && gateBanks.length) {
+                          setGateBanks(list => list.slice(0, -1));
+                        }
+                      }}
+                      style={{ flex: 1, minWidth: 130, background: 'transparent', border: 'none', outline: 'none', fontSize: 14.5, color: C.text, padding: '4px 2px' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {BANKS.filter(b => !gateBanks.includes(b)).map(b => (
+                      <button key={b} type="button" onClick={() => addBank(b)} style={{
+                        all: 'unset', cursor: 'pointer', fontSize: 12, color: C.muted,
+                        border: '1px solid ' + C.line, borderRadius: 5, padding: '5px 9px',
+                      }}>+ {b}</button>
+                    ))}
+                  </div>
+
+                  {gateError && <div style={{ fontSize: 13, color: C.red }}>{gateError}</div>}
+
+                  <button type="submit" disabled={sending} style={{ ...primary, padding: '14px 20px', fontSize: 15, opacity: sending ? 0.6 : 1 }}>
+                    {sending ? 'Sending…' : 'Request early access'}
+                  </button>
+                  <button type="button" onClick={() => setGate(false)} style={{ ...btn, color: C.dim, fontSize: 13, fontWeight: 400, padding: '4px 0' }}>
+                    Not now
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+                  <svg width="26" height="26" viewBox="0 0 22 22" aria-hidden="true">
+                    <circle cx="11" cy="11" r="10" fill="none" stroke={C.accent} strokeWidth="1.5" />
+                    <path d="M6.5 11.5 L 9.5 14.5 L 15.5 8" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  <h3 style={{ margin: 0, fontSize: 21, letterSpacing: '-0.02em' }}>You’re on the list.</h3>
+                </div>
+                <p style={{ margin: '0 0 22px', fontSize: 14.5, lineHeight: 1.6, color: C.sub }}>
+                  We’ll be in touch before launch — and your basket of {summary.total} order
+                  {summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly which session to
+                  open first. Nothing was sent to any bank.
+                </p>
+                <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  <button type="button" onClick={reset} style={primary}>Try another sheet</button>
+                  <a href="https://wealthwire.ch" style={{ ...ghost, display: 'inline-block' }}>Back to wealthwire.ch</a>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      <footer style={{ borderTop: '1px solid ' + C.hair, marginTop: 'auto' }}>
+        <div style={{
+          maxWidth: 1320, margin: '0 auto', padding: '20px 22px', display: 'flex', flexWrap: 'wrap',
+          gap: '10px 26px', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: C.dim,
+        }}>
+          <div>© {new Date().getFullYear()} WealthWire · a demo, not a trading system</div>
+          <div style={{ display: 'flex', gap: 20 }}>
+            <a href="mailto:hello@wealthwire.ch" style={{ color: C.muted }}>hello@wealthwire.ch</a>
+            <a href="https://wealthwire.ch/privacy" style={{ color: C.muted }}>Privacy</a>
+          </div>
+        </div>
+      </footer>
+    </main>
+  );
+}
