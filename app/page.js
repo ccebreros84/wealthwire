@@ -1,7 +1,11 @@
 'use client';
 
-import { useCallback, useMemo, useRef, useState } from 'react';
-import { BANKS, COLUMNS, downloadTemplate, parseFile, validate, qty } from '../lib/orders';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  BANKS, COLUMNS, downloadTemplate, parseFile, validate, qty,
+  priceFor, notionalOf, currencyBreakdown, fmtAmount, fmtCompact,
+  downloadExecutions, execStamp, hashString,
+} from '../lib/orders';
 
 const C = {
   bg: '#070B12', panel: '#0D1421', line: '#1F2A3D', hair: '#141C2A',
@@ -18,6 +22,23 @@ const btn = {
 };
 const primary = { ...btn, background: C.accent, color: '#06090F' };
 const ghost = { ...btn, border: '1px solid ' + C.line, color: C.text, fontWeight: 500 };
+const glass = {
+  ...btn,
+  background: 'rgba(255, 255, 255, 0.06)',
+  border: '1px solid rgba(255, 255, 255, 0.16)',
+  backdropFilter: 'blur(10px)',
+  WebkitBackdropFilter: 'blur(10px)',
+  color: C.text,
+  fontWeight: 500,
+  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
+};
+
+const REJECT_REASONS = [
+  'Custody account not recognised at this custodian',
+  'Instrument not tradable on the connected venue',
+  'Insufficient position for SELL',
+  'Order size exceeds the venue block limit',
+];
 
 function Logo() {
   return (
@@ -53,11 +74,12 @@ function Stepper({ step }) {
   );
 }
 
-function Stat({ label, value, tone }) {
+function Stat({ label, value, tone, sub, wide }) {
   return (
-    <div style={{ ...card, padding: '14px 16px', minWidth: 132, flex: '1 1 132px' }}>
+    <div style={{ ...card, padding: '14px 16px', minWidth: wide ? 168 : 132, flex: wide ? '1 1 168px' : '1 1 132px' }}>
       <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.1em', color: C.dim, marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: 26, fontWeight: 600, lineHeight: 1, color: tone || C.text }}>{value}</div>
+      <div style={{ fontSize: wide ? 22 : 26, fontWeight: 600, lineHeight: 1.05, color: tone || C.text }}>{value}</div>
+      {sub && <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, marginTop: 6 }}>{sub}</div>}
     </div>
   );
 }
@@ -72,12 +94,18 @@ export default function Page() {
   const [bank, setBank] = useState('');
 
   const [gate, setGate] = useState(false);
+  const [gateMode, setGateMode] = useState('access');   // 'access' | 'export'
   const [email, setEmail] = useState('');
   const [gateBanks, setGateBanks] = useState([]);
   const [bankInput, setBankInput] = useState('');
   const [sending, setSending] = useState(false);
   const [gateError, setGateError] = useState('');
   const [sent, setSent] = useState(false);
+  const [downloaded, setDownloaded] = useState('');
+
+  const [simState, setSimState] = useState('idle');     // 'idle' | 'running' | 'done'
+  const [execs, setExecs] = useState({});
+  const [tick, setTick] = useState(0);
 
   const fileRef = useRef(null);
 
@@ -90,12 +118,25 @@ export default function Page() {
       total: rows.length,
       buys: buys.length,
       sells: sells.length,
-      buyQty: buys.reduce((a, r) => a + qty(r), 0),
-      sellQty: sells.reduce((a, r) => a + qty(r), 0),
       instruments: new Set(rows.map(r => r.isin)).size,
       accounts: new Set(rows.map(r => r.account).filter(Boolean)).size,
     };
   }, [rows]);
+
+  const ccy = useMemo(() => currencyBreakdown(rows), [rows]);
+
+  const execStats = useMemo(() => {
+    const v = Object.values(execs);
+    return {
+      filled: v.filter(e => e.status === 'filled').length,
+      rejected: v.filter(e => e.status === 'rejected').length,
+      pending: v.filter(e => e.status === 'pending').length,
+      filledNotional: rows.reduce((a, r) => {
+        const e = execs[r.id];
+        return a + (e && e.status === 'filled' ? e.filledQty * e.price : 0);
+      }, 0),
+    };
+  }, [execs, rows]);
 
   const take = useCallback(async file => {
     if (!file) return;
@@ -122,11 +163,14 @@ export default function Page() {
   const reset = () => {
     setStep('start'); setRows([]); setFileName(''); setHeaderError(null); setBank('');
     setGate(false); setSent(false); setEmail(''); setGateBanks([]); setBankInput(''); setGateError('');
+    setSimState('idle'); setExecs({}); setDownloaded(''); setGateMode('access');
   };
 
-  const openGate = () => {
+  const openGate = (mode) => {
+    setGateMode(mode || 'access');
     setGateBanks(bank ? [bank] : []);
     setGateError('');
+    setSent(false);
     setGate(true);
   };
 
@@ -136,6 +180,89 @@ export default function Page() {
     setBankInput('');
   };
 
+  // ── simulation ────────────────────────────────────────────────────────────
+  const startSimulation = () => {
+    setGate(false);
+    const n = rows.length;
+    const rejectCount = n >= 10 ? Math.floor(n * 0.1) : (n >= 3 ? 1 : 0);
+
+    const ranked = [...rows].sort((a, b) => hashString(a.isin + a.id) - hashString(b.isin + b.id));
+    const rejected = new Set(ranked.slice(0, rejectCount).map(r => r.id));
+
+    const totalMs = Math.min(55000, 5000 + n * 900);
+    const now = Date.now();
+    const plan = {};
+
+    rows.forEach((r, i) => {
+      const frac = n <= 1 ? 1 : (i + 1) / n;
+      const jitter = 0.7 + (hashString(r.isin + 's') % 55) / 100;   // 0.70 – 1.25
+      const end = now + 600 + Math.min(totalMs, totalMs * frac * jitter);
+      plan[r.id] = {
+        status: 'pending',
+        filledQty: 0,
+        target: qty(r),
+        price: priceFor(r),
+        start: now + 500,
+        end,
+        willReject: rejected.has(r.id),
+        reason: rejected.has(r.id) ? REJECT_REASONS[hashString(r.isin) % REJECT_REASONS.length] : '',
+        execId: '',
+        completedAt: '',
+      };
+    });
+
+    setExecs(plan);
+    setSimState('running');
+  };
+
+  useEffect(() => {
+    if (simState !== 'running') return;
+    const iv = setInterval(() => {
+      setTick(t => t + 1);
+      setExecs(prev => {
+        const now = Date.now();
+        const next = {};
+        let changed = false;
+        for (const id of Object.keys(prev)) {
+          const e = prev[id];
+          if (e.status !== 'pending') { next[id] = e; continue; }
+
+          if (e.willReject) {
+            const at = e.start + (e.end - e.start) * 0.4;
+            if (now >= at) {
+              next[id] = { ...e, status: 'rejected', filledQty: 0, completedAt: execStamp() };
+              changed = true;
+            } else next[id] = e;
+            continue;
+          }
+
+          const span = Math.max(1, e.end - e.start);
+          const p = Math.max(0, Math.min(1, (now - e.start) / span));
+          if (p >= 1) {
+            next[id] = {
+              ...e, status: 'filled', filledQty: e.target, completedAt: execStamp(),
+              execId: 'WW-' + String(hashString(id + e.end) % 1000000).padStart(6, '0'),
+            };
+            changed = true;
+          } else {
+            const q = Math.floor(e.target * p);
+            if (q !== e.filledQty) changed = true;
+            next[id] = { ...e, filledQty: q };
+          }
+        }
+        return changed ? next : prev;
+      });
+    }, 320);
+    return () => clearInterval(iv);
+  }, [simState]);
+
+  useEffect(() => {
+    if (simState !== 'running') return;
+    const vals = Object.values(execs);
+    if (vals.length && vals.every(e => e.status !== 'pending')) setSimState('done');
+  }, [execs, simState]);
+
+  // ── lead submit ───────────────────────────────────────────────────────────
   const submitLead = async e => {
     e.preventDefault();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
@@ -149,10 +276,25 @@ export default function Page() {
       const res = await fetch('/api/lead', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim(), banks, orderCount: rows.length, source: 'app-route' }),
+        body: JSON.stringify({
+          email: email.trim(),
+          banks,
+          orderCount: rows.length,
+          source: gateMode === 'export' ? 'app-export' : 'app-route',
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok || !data.ok) throw new Error(data.error || 'Request failed');
+
+      if (gateMode === 'export') {
+        try {
+          const name = downloadExecutions(rows, execs);
+          setDownloaded(name);
+        } catch (err) {
+          console.error(err);
+          setDownloaded('');
+        }
+      }
       setSent(true);
     } catch (err) {
       setGateError(err.message === 'Failed to fetch' ? 'Network problem. Try again.' : err.message);
@@ -160,6 +302,16 @@ export default function Page() {
       setSending(false);
     }
   };
+
+  const notionalLabel = ccy.dominant
+    ? 'NOTIONAL · ' + ccy.ccy
+    : (ccy.ccy ? 'NOTIONAL · ' + ccy.ccy + ' (MIXED)' : 'NOTIONAL');
+
+  const notionalSub = !ccy.ccy
+    ? 'no currency data'
+    : ccy.dominant
+      ? Math.round(ccy.share * 100) + '% of basket · simulated'
+      : 'largest of ' + ccy.entries.length + ' currencies · ' + Math.round(ccy.share * 100) + '%';
 
   return (
     <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -376,84 +528,211 @@ export default function Page() {
           <div style={{ animation: 'ww-in 0.4s ease both' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
               <div>
-                <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>Confirm and route</h2>
-                <div style={{ fontFamily: mono, fontSize: 11.5, color: C.dim }}>THE LAST SCREEN BEFORE ORDERS LEAVE THE BUILDING</div>
+                <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>
+                  {simState === 'idle' ? 'Confirm and route' : simState === 'running' ? 'Routing simulation' : 'Execution report'}
+                </h2>
+                <div style={{ fontFamily: mono, fontSize: 11.5, color: C.dim }}>
+                  {simState === 'idle'
+                    ? 'THE LAST SCREEN BEFORE ORDERS LEAVE THE BUILDING'
+                    : simState === 'running'
+                      ? 'SIMULATED FILLS · NOTHING REACHES ' + (bank || 'ANY BANK').toUpperCase()
+                      : 'SIMULATED · ' + execStats.filled + ' FILLED · ' + execStats.rejected + ' REJECTED'}
+                </div>
               </div>
-              <button type="button" onClick={() => setStep('validate')} style={{ ...ghost, marginLeft: 'auto' }}>Back to validation</button>
+              {simState === 'idle' && (
+                <button type="button" onClick={() => setStep('validate')} style={{ ...ghost, marginLeft: 'auto' }}>Back to validation</button>
+              )}
+              {simState === 'done' && (
+                <button type="button" onClick={reset} style={{ ...ghost, marginLeft: 'auto' }}>Try another sheet</button>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 20 }}>
+              <Stat
+                wide
+                label={notionalLabel}
+                value={ccy.ccy ? fmtCompact(ccy.amount) : '—'}
+                tone={C.accent}
+                sub={notionalSub}
+              />
               <Stat label="ORDERS" value={summary.total} />
               <Stat label="BUY" value={summary.buys} tone={C.accent} />
               <Stat label="SELL" value={summary.sells} tone={C.blue} />
               <Stat label="INSTRUMENTS" value={summary.instruments} />
               <Stat label="ACCOUNTS" value={summary.accounts} />
-              <Stat label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text} />
+              {simState === 'idle'
+                ? <Stat label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text} />
+                : <Stat label="REJECTED" value={execStats.rejected} tone={execStats.rejected ? C.red : C.text} />}
             </div>
 
-            <div style={{ ...card, padding: 20, marginBottom: 18 }}>
-              <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Route this basket to</div>
-              <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>
-                Pick the custodian that holds these accounts. In the live product this is a FIX session; here it only
-                tells us which bank you need first.
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                {BANKS.map(b => (
-                  <button
-                    key={b} type="button" onClick={() => setBank(b)}
-                    style={{
-                      all: 'unset', cursor: 'pointer', padding: '9px 14px', borderRadius: 7, fontSize: 13.5,
-                      border: '1px solid ' + (bank === b ? C.accent : C.line),
-                      background: bank === b ? C.accent + '18' : 'transparent',
-                      color: bank === b ? C.accent : C.sub,
-                    }}
-                  >{b}</button>
-                ))}
-              </div>
-            </div>
-
-            <div style={{ ...card, overflow: 'hidden', marginBottom: 22 }}>
-              <div style={{ padding: '12px 16px', borderBottom: '1px solid ' + C.line, fontSize: 13.5, fontWeight: 600 }}>
-                Orders in this basket
-              </div>
-              <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 760 }}>
-                  <div style={{
-                    display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 1fr', gap: 10,
-                    padding: '9px 16px', borderBottom: '1px solid ' + C.line,
-                    fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
-                  }}>
-                    <div>#</div><div>INSTRUMENT</div><div>ISIN</div><div>SIDE</div><div style={{ textAlign: 'right' }}>QUANTITY</div><div>TYPE</div><div>CUSTODY ACCOUNT</div>
-                  </div>
-                  {rows.map((row, i) => (
-                    <div key={row.id} style={{
-                      display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 1fr', gap: 10,
-                      padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
-                    }}>
-                      <div style={{ fontFamily: mono, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
-                      <div>{row.instrument}</div>
-                      <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.isin}</div>
-                      <div style={{ fontFamily: mono, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
-                      <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{row.quantity}</div>
-                      <div style={{ fontSize: 12, color: C.muted }}>{row.orderType}{row.limit ? ' ' + row.limit : ''}</div>
-                      <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.account}</div>
-                    </div>
+            {simState === 'idle' && (
+              <div style={{ ...card, padding: 20, marginBottom: 18 }}>
+                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Route this basket to</div>
+                <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>
+                  Pick the custodian that holds these accounts. In the live product this is a FIX session; here it only
+                  tells us which bank you need first.
+                </div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                  {BANKS.map(b => (
+                    <button
+                      key={b} type="button" onClick={() => setBank(b)}
+                      style={{
+                        all: 'unset', cursor: 'pointer', padding: '9px 14px', borderRadius: 7, fontSize: 13.5,
+                        border: '1px solid ' + (bank === b ? C.accent : C.line),
+                        background: bank === b ? C.accent + '18' : 'transparent',
+                        color: bank === b ? C.accent : C.sub,
+                      }}
+                    >{b}</button>
                   ))}
                 </div>
               </div>
-            </div>
+            )}
 
-            <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
-              <button
-                type="button" onClick={openGate} disabled={!bank}
-                style={{ ...primary, padding: '15px 26px', fontSize: 15, opacity: bank ? 1 : 0.35, cursor: bank ? 'pointer' : 'not-allowed' }}
-              >
-                Route {summary.total} order{summary.total === 1 ? '' : 's'} via FIX
-              </button>
-              <span style={{ fontSize: 13, color: C.dim }}>
-                {bank ? 'Routing is disabled in this demo — nothing reaches ' + bank + '.' : 'Pick a custodian bank first.'}
-              </span>
-            </div>
+            {simState === 'idle' ? (
+              <div style={{ ...card, overflow: 'hidden', marginBottom: 22 }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid ' + C.line, fontSize: 13.5, fontWeight: 600 }}>
+                  Orders in this basket
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: 860 }}>
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 110px 1fr', gap: 10,
+                      padding: '9px 16px', borderBottom: '1px solid ' + C.line,
+                      fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
+                    }}>
+                      <div>#</div><div>INSTRUMENT</div><div>ISIN</div><div>SIDE</div>
+                      <div style={{ textAlign: 'right' }}>QUANTITY</div><div>TYPE</div>
+                      <div style={{ textAlign: 'right' }}>NOTIONAL</div><div>CUSTODY ACCOUNT</div>
+                    </div>
+                    {rows.map((row, i) => (
+                      <div key={row.id} style={{
+                        display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 110px 1fr', gap: 10,
+                        padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
+                      }}>
+                        <div style={{ fontFamily: mono, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
+                        <div>{row.instrument}</div>
+                        <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.isin}</div>
+                        <div style={{ fontFamily: mono, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
+                        <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{row.quantity}</div>
+                        <div style={{ fontSize: 12, color: C.muted }}>{row.orderType}{row.limit ? ' ' + row.limit : ''}</div>
+                        <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{fmtAmount(notionalOf(row))}</div>
+                        <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.account}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div style={{ ...card, overflow: 'hidden', marginBottom: 22 }}>
+                <div style={{
+                  padding: '12px 16px', borderBottom: '1px solid ' + C.line, display: 'flex',
+                  alignItems: 'center', gap: 14, flexWrap: 'wrap',
+                }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>Execution blotter</span>
+                  <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>
+                    {execStats.filled}/{rows.length} FILLED
+                    {execStats.rejected ? ' · ' + execStats.rejected + ' REJECTED' : ''}
+                    {execStats.pending ? ' · ' + execStats.pending + ' WORKING' : ''}
+                  </span>
+                  {simState === 'running' && (
+                    <span style={{
+                      marginLeft: 'auto', fontFamily: mono, fontSize: 10.5, letterSpacing: '0.1em',
+                      color: C.accent, animation: 'ww-blip 1.4s ease-in-out infinite',
+                    }}>● LIVE</span>
+                  )}
+                </div>
+                <div style={{ overflowX: 'auto' }}>
+                  <div style={{ minWidth: 900 }}>
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: '34px 1.15fr 60px 88px 88px 96px 110px 1.1fr', gap: 10,
+                      padding: '9px 16px', borderBottom: '1px solid ' + C.line,
+                      fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
+                    }}>
+                      <div>#</div><div>INSTRUMENT</div><div>SIDE</div>
+                      <div style={{ textAlign: 'right' }}>ORDERED</div>
+                      <div style={{ textAlign: 'right' }}>FILLED</div>
+                      <div style={{ textAlign: 'right' }}>PRICE</div>
+                      <div>STATUS</div><div>DETAIL</div>
+                    </div>
+                    {rows.map((row, i) => {
+                      const e = execs[row.id] || {};
+                      const pct = e.target ? Math.min(100, Math.round((e.filledQty / e.target) * 100)) : 0;
+                      const tone = e.status === 'rejected' ? C.red : e.status === 'filled' ? C.accent : C.amber;
+                      return (
+                        <div key={row.id} style={{
+                          display: 'grid', gridTemplateColumns: '34px 1.15fr 60px 88px 88px 96px 110px 1.1fr', gap: 10,
+                          padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
+                          background: e.status === 'rejected' ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
+                        }}>
+                          <div style={{ fontFamily: mono, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
+                          <div>{row.instrument}</div>
+                          <div style={{ fontFamily: mono, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
+                          <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{fmtAmount(e.target || 0)}</div>
+                          <div style={{ fontFamily: mono, fontSize: 12, color: tone, textAlign: 'right' }}>{fmtAmount(e.filledQty || 0)}</div>
+                          <div style={{ fontFamily: mono, fontSize: 12, color: C.muted, textAlign: 'right' }}>
+                            {e.status === 'filled' ? e.price.toFixed(2) : '—'}
+                          </div>
+                          <div>
+                            <span style={{
+                              fontFamily: mono, fontSize: 10, letterSpacing: '0.08em', color: tone,
+                              border: '1px solid ' + tone + '55', background: tone + '12',
+                              borderRadius: 5, padding: '3px 7px',
+                            }}>
+                              {e.status === 'filled' ? 'FILLED' : e.status === 'rejected' ? 'REJECTED' : pct + '%'}
+                            </span>
+                          </div>
+                          <div style={{ fontSize: 11.5, color: e.status === 'rejected' ? C.red : C.dim, fontFamily: e.status === 'rejected' ? 'inherit' : mono }}>
+                            {e.status === 'rejected'
+                              ? e.reason
+                              : e.status === 'filled'
+                                ? e.execId
+                                : (
+                                  <span style={{ display: 'inline-block', width: '100%', maxWidth: 140, height: 4, background: C.hair, borderRadius: 3, overflow: 'hidden', verticalAlign: 'middle' }}>
+                                    <span style={{ display: 'block', width: pct + '%', height: '100%', background: C.amber, transition: 'width 0.3s linear' }} />
+                                  </span>
+                                )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {simState === 'idle' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <button
+                  type="button" onClick={() => openGate('access')} disabled={!bank}
+                  style={{ ...primary, padding: '15px 26px', fontSize: 15, opacity: bank ? 1 : 0.35, cursor: bank ? 'pointer' : 'not-allowed' }}
+                >
+                  Route {summary.total} order{summary.total === 1 ? '' : 's'} via FIX
+                </button>
+                <span style={{ fontSize: 13, color: C.dim }}>
+                  {bank ? 'Routing is disabled in this demo — nothing reaches ' + bank + '.' : 'Pick a custodian bank first.'}
+                </span>
+              </div>
+            )}
+
+            {simState === 'running' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, color: C.muted }}>
+                  Working the basket… fills arrive over the next few seconds. Prices are simulated.
+                </span>
+              </div>
+            )}
+
+            {simState === 'done' && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <button type="button" onClick={() => openGate('export')} style={{ ...primary, padding: '15px 26px', fontSize: 15 }}>
+                  Export Executions
+                </button>
+                <span style={{ fontSize: 13, color: C.dim }}>
+                  {execStats.filled} filled{execStats.rejected ? ', ' + execStats.rejected + ' rejected' : ''} ·{' '}
+                  {ccy.ccy ? ccy.ccy + ' ' + fmtAmount(execStats.filledNotional) + ' executed' : 'simulated'}
+                </span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -469,18 +748,20 @@ export default function Page() {
           <div style={{
             ...card, width: '100%', maxWidth: 520, padding: 28, background: '#0B1220',
             boxShadow: '0 40px 100px rgba(0,0,0,0.6)', animation: 'ww-in 0.25s ease both',
+            maxHeight: '90vh', overflowY: 'auto',
           }}>
             {!sent ? (
               <form onSubmit={submitLead}>
                 <div style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.14em', color: C.accent, marginBottom: 12 }}>
-                  ONE STEP LEFT
+                  {gateMode === 'export' ? 'YOUR EXECUTIONS ARE READY' : 'ONE STEP LEFT'}
                 </div>
                 <h3 style={{ margin: '0 0 10px', fontSize: 22, letterSpacing: '-0.02em' }}>
-                  Your basket is ready to route.
+                  {gateMode === 'export' ? 'Take the execution file with you.' : 'Your basket is ready to route.'}
                 </h3>
                 <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.55, color: C.sub }}>
-                  Live FIX sessions open with the first customers. Leave your work email and the custodians you need,
-                  and you go on the early-access list — we prioritise banks by what people ask for.
+                  {gateMode === 'export'
+                    ? 'Your uploaded sheet, enriched with status, fills, prices and execution IDs. Leave your work email and the custodians you need, and you go on the early-access list.'
+                    : 'Live FIX sessions open with the first customers. Leave your work email and the custodians you need, and you go on the early-access list — we prioritise banks by what people ask for.'}
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -535,8 +816,17 @@ export default function Page() {
                   {gateError && <div style={{ fontSize: 13, color: C.red }}>{gateError}</div>}
 
                   <button type="submit" disabled={sending} style={{ ...primary, padding: '14px 20px', fontSize: 15, opacity: sending ? 0.6 : 1 }}>
-                    {sending ? 'Sending…' : 'Request early access'}
+                    {sending
+                      ? (gateMode === 'export' ? 'Preparing your file…' : 'Sending…')
+                      : (gateMode === 'export' ? 'Download your executions and request early access' : 'Request early access')}
                   </button>
+
+                  {gateMode === 'access' && simState === 'idle' && (
+                    <button type="button" onClick={startSimulation} style={{ ...glass, padding: '13px 20px', fontSize: 14 }}>
+                      Simulate Trades
+                    </button>
+                  )}
+
                   <button type="button" onClick={() => setGate(false)} style={{ ...btn, color: C.dim, fontSize: 13, fontWeight: 400, padding: '4px 0' }}>
                     Not now
                   </button>
@@ -549,14 +839,33 @@ export default function Page() {
                     <circle cx="11" cy="11" r="10" fill="none" stroke={C.accent} strokeWidth="1.5" />
                     <path d="M6.5 11.5 L 9.5 14.5 L 15.5 8" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  <h3 style={{ margin: 0, fontSize: 21, letterSpacing: '-0.02em' }}>You’re on the list.</h3>
+                  <h3 style={{ margin: 0, fontSize: 21, letterSpacing: '-0.02em' }}>You're on the list.</h3>
                 </div>
                 <p style={{ margin: '0 0 22px', fontSize: 14.5, lineHeight: 1.6, color: C.sub }}>
-                  We’ll be in touch before launch — and your basket of {summary.total} order
-                  {summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly which session to
-                  open first. Nothing was sent to any bank.
+                  {gateMode === 'export' ? (
+                    <>
+                      {downloaded
+                        ? <>Your execution file <span style={{ fontFamily: mono, fontSize: 13, color: C.accent }}>{downloaded}</span> has downloaded. </>
+                        : <>Your details are saved. </>}
+                      Thanks for getting on the waitlist — we'll be in touch before launch, and your basket of{' '}
+                      {summary.total} order{summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly
+                      which session to open first. Nothing was sent to any bank.
+                    </>
+                  ) : (
+                    <>
+                      We'll be in touch before launch — and your basket of {summary.total} order
+                      {summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly which session to
+                      open first. Nothing was sent to any bank.
+                    </>
+                  )}
                 </p>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                  {gateMode === 'access' && simState === 'idle' && (
+                    <button type="button" onClick={startSimulation} style={{ ...glass, padding: '12px 18px' }}>Simulate Trades</button>
+                  )}
+                  {gateMode === 'export' && (
+                    <button type="button" onClick={() => setGate(false)} style={{ ...ghost }}>Back to the blotter</button>
+                  )}
                   <button type="button" onClick={reset} style={primary}>Try another sheet</button>
                   <a href="https://wealthwire.ch" style={{ ...ghost, display: 'inline-block' }}>Back to wealthwire.ch</a>
                 </div>
