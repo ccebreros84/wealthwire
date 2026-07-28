@@ -40,6 +40,14 @@ const REJECT_REASONS = [
   'Order size exceeds the venue block limit',
 ];
 
+const FILTER_TONE = { BUY: C.accent, SELL: C.blue, REJECTED: C.red, WARNINGS: C.amber };
+const FILTER_LABEL = {
+  BUY: 'buy orders',
+  SELL: 'sell orders',
+  REJECTED: 'rejected orders',
+  WARNINGS: 'orders with warnings',
+};
+
 function Logo() {
   return (
     <svg width="30" height="20" viewBox="0 0 36 24" aria-hidden="true">
@@ -156,7 +164,7 @@ export default function Page() {
   const [simState, setSimState] = useState('idle');     // 'idle' | 'running' | 'done'
   const [execs, setExecs] = useState({});
   const [tick, setTick] = useState(0);
-  const [filter, setFilter] = useState(null);           // null | 'BUY' | 'SELL' | 'REJECTED'
+  const [filter, setFilter] = useState(null);           // null | 'BUY' | 'SELL' | 'REJECTED' | 'WARNINGS'
 
   const fileRef = useRef(null);
 
@@ -197,8 +205,14 @@ export default function Page() {
     if (filter === 'REJECTED') {
       return indexed.filter(({ row }) => execs[row.id] && execs[row.id].status === 'rejected');
     }
+    if (filter === 'WARNINGS') {
+      return indexed.filter(({ row }) => {
+        const ri = issues[row.id];
+        return Boolean(ri) && Object.values(ri).some(v => v.level === 'warning');
+      });
+    }
     return indexed.filter(({ row }) => row.side === filter);
-  }, [rows, filter, execs]);
+  }, [rows, filter, execs, issues]);
 
   const toggleFilter = key => setFilter(f => (f === key ? null : key));
 
@@ -632,7 +646,12 @@ export default function Page() {
               <Stat label="INSTRUMENTS" value={summary.instruments} />
               <Stat label="ACCOUNTS" value={summary.accounts} />
               {simState === 'idle'
-                ? <Stat label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text} />
+                ? (
+                  <Stat
+                    label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text}
+                    onClick={() => toggleFilter('WARNINGS')} active={filter === 'WARNINGS'} disabled={!warnings}
+                  />
+                )
                 : (
                   <Stat
                     label="REJECTED" value={execStats.rejected} tone={execStats.rejected ? C.red : C.text}
@@ -668,10 +687,10 @@ export default function Page() {
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14,
                 padding: '10px 14px', borderRadius: 8,
-                border: '1px solid ' + (filter === 'REJECTED' ? C.red : filter === 'SELL' ? C.blue : C.accent) + '55',
-                background: (filter === 'REJECTED' ? C.red : filter === 'SELL' ? C.blue : C.accent) + '10',
+                border: '1px solid ' + (FILTER_TONE[filter] || C.accent) + '55',
+                background: (FILTER_TONE[filter] || C.accent) + '10',
               }}>
-                <span style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.1em', color: filter === 'REJECTED' ? C.red : filter === 'SELL' ? C.blue : C.accent }}>
+                <span style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.1em', color: FILTER_TONE[filter] || C.accent }}>
                   FILTERED · {filter}
                 </span>
                 <span style={{ fontSize: 13, color: C.sub }}>
@@ -720,7 +739,7 @@ export default function Page() {
                     ))}
                     {!visible.length && (
                       <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13.5, color: C.muted }}>
-                        No {filter ? filter.toLowerCase() : ''} orders in this basket.
+                        No {FILTER_LABEL[filter] || 'matching orders'} in this basket.
                       </div>
                     )}
                   </div>
@@ -801,7 +820,7 @@ export default function Page() {
                     })}
                     {!visible.length && (
                       <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13.5, color: C.muted }}>
-                        No {filter ? filter.toLowerCase() : ''} orders in this basket.
+                        No {FILTER_LABEL[filter] || 'matching orders'} in this basket.
                       </div>
                     )}
                   </div>
