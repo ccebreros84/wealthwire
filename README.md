@@ -1,4 +1,4 @@
-# wealthwire.app
+# wealthwire.app 
 
 The public, no-sign-in demo: download an Excel template, upload orders, watch them validate,
 walk through confirm & route — and at the Route click, the early-access gate captures a work
