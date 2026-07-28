@@ -74,13 +74,63 @@ function Stepper({ step }) {
   );
 }
 
-function Stat({ label, value, tone, sub, wide }) {
-  return (
-    <div style={{ ...card, padding: '14px 16px', minWidth: wide ? 168 : 132, flex: wide ? '1 1 168px' : '1 1 132px' }}>
-      <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.1em', color: C.dim, marginBottom: 8 }}>{label}</div>
-      <div style={{ fontSize: wide ? 22 : 26, fontWeight: 600, lineHeight: 1.05, color: tone || C.text }}>{value}</div>
+function Stat({ label, value, tone, sub, wide, onClick, active, disabled }) {
+  const interactive = Boolean(onClick) && !disabled;
+  const accent = tone || C.text;
+
+  const base = {
+    ...card,
+    padding: '14px 16px',
+    minWidth: wide ? 168 : 132,
+    flex: wide ? '1 1 168px' : '1 1 132px',
+    textAlign: 'left',
+    transition: 'border-color 0.15s ease, background 0.15s ease, transform 0.1s ease',
+    borderColor: active ? accent : C.line,
+    background: active ? accent + '14' : C.panel,
+  };
+
+  const body = (
+    <>
+      <div style={{
+        fontFamily: mono, fontSize: 10, letterSpacing: '0.1em',
+        color: active ? accent : C.dim, marginBottom: 8,
+        display: 'flex', alignItems: 'center', gap: 6,
+      }}>
+        {label}
+        {interactive && (
+          <span style={{ opacity: active ? 1 : 0.45, lineHeight: 0 }}>
+            {active ? (
+              <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M2.5 2.5 L 9.5 9.5 M 9.5 2.5 L 2.5 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+            ) : (
+              <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true">
+                <path d="M1.5 2.5 L 10.5 2.5 L 7 6.5 L 7 10 L 5 9 L 5 6.5 Z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+              </svg>
+            )}
+          </span>
+        )}
+      </div>
+      <div style={{ fontSize: wide ? 22 : 26, fontWeight: 600, lineHeight: 1.05, color: accent }}>{value}</div>
       {sub && <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, marginTop: 6 }}>{sub}</div>}
-    </div>
+    </>
+  );
+
+  if (!interactive) return <div style={base}>{body}</div>;
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={Boolean(active)}
+      title={active ? 'Clear this filter' : 'Filter the blotter by ' + label.toLowerCase()}
+      style={{
+        font: 'inherit', margin: 0, appearance: 'none', WebkitAppearance: 'none',
+        ...base, cursor: 'pointer', boxSizing: 'border-box', display: 'block', width: '100%',
+      }}
+    >
+      {body}
+    </button>
   );
 }
 
@@ -106,6 +156,7 @@ export default function Page() {
   const [simState, setSimState] = useState('idle');     // 'idle' | 'running' | 'done'
   const [execs, setExecs] = useState({});
   const [tick, setTick] = useState(0);
+  const [filter, setFilter] = useState(null);           // null | 'BUY' | 'SELL' | 'REJECTED'
 
   const fileRef = useRef(null);
 
@@ -138,6 +189,19 @@ export default function Page() {
     };
   }, [execs, rows]);
 
+  // Filtered view of the basket. Keeps each row's original position so the
+  // "#" column still matches the uploaded sheet while a filter is on.
+  const visible = useMemo(() => {
+    const indexed = rows.map((row, i) => ({ row, i }));
+    if (!filter) return indexed;
+    if (filter === 'REJECTED') {
+      return indexed.filter(({ row }) => execs[row.id] && execs[row.id].status === 'rejected');
+    }
+    return indexed.filter(({ row }) => row.side === filter);
+  }, [rows, filter, execs]);
+
+  const toggleFilter = key => setFilter(f => (f === key ? null : key));
+
   const take = useCallback(async file => {
     if (!file) return;
     setBusy(true);
@@ -163,7 +227,7 @@ export default function Page() {
   const reset = () => {
     setStep('start'); setRows([]); setFileName(''); setHeaderError(null); setBank('');
     setGate(false); setSent(false); setEmail(''); setGateBanks([]); setBankInput(''); setGateError('');
-    setSimState('idle'); setExecs({}); setDownloaded(''); setGateMode('access');
+    setSimState('idle'); setExecs({}); setDownloaded(''); setGateMode('access'); setFilter(null);
   };
 
   const openGate = (mode) => {
@@ -183,6 +247,7 @@ export default function Page() {
   // ── simulation ────────────────────────────────────────────────────────────
   const startSimulation = () => {
     setGate(false);
+    setFilter(null);
     const n = rows.length;
     const rejectCount = n >= 10 ? Math.floor(n * 0.1) : (n >= 3 ? 1 : 0);
 
@@ -556,13 +621,24 @@ export default function Page() {
                 sub={notionalSub}
               />
               <Stat label="ORDERS" value={summary.total} />
-              <Stat label="BUY" value={summary.buys} tone={C.accent} />
-              <Stat label="SELL" value={summary.sells} tone={C.blue} />
+              <Stat
+                label="BUY" value={summary.buys} tone={C.accent}
+                onClick={() => toggleFilter('BUY')} active={filter === 'BUY'} disabled={!summary.buys}
+              />
+              <Stat
+                label="SELL" value={summary.sells} tone={C.blue}
+                onClick={() => toggleFilter('SELL')} active={filter === 'SELL'} disabled={!summary.sells}
+              />
               <Stat label="INSTRUMENTS" value={summary.instruments} />
               <Stat label="ACCOUNTS" value={summary.accounts} />
               {simState === 'idle'
                 ? <Stat label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text} />
-                : <Stat label="REJECTED" value={execStats.rejected} tone={execStats.rejected ? C.red : C.text} />}
+                : (
+                  <Stat
+                    label="REJECTED" value={execStats.rejected} tone={execStats.rejected ? C.red : C.text}
+                    onClick={() => toggleFilter('REJECTED')} active={filter === 'REJECTED'} disabled={!execStats.rejected}
+                  />
+                )}
             </div>
 
             {simState === 'idle' && (
@@ -588,6 +664,29 @@ export default function Page() {
               </div>
             )}
 
+            {filter && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14,
+                padding: '10px 14px', borderRadius: 8,
+                border: '1px solid ' + (filter === 'REJECTED' ? C.red : filter === 'SELL' ? C.blue : C.accent) + '55',
+                background: (filter === 'REJECTED' ? C.red : filter === 'SELL' ? C.blue : C.accent) + '10',
+              }}>
+                <span style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.1em', color: filter === 'REJECTED' ? C.red : filter === 'SELL' ? C.blue : C.accent }}>
+                  FILTERED · {filter}
+                </span>
+                <span style={{ fontSize: 13, color: C.sub }}>
+                  Showing {visible.length} of {rows.length} order{rows.length === 1 ? '' : 's'}.
+                  {' '}Exports and totals still cover the whole basket.
+                </span>
+                <button
+                  type="button" onClick={() => setFilter(null)}
+                  style={{ ...btn, marginLeft: 'auto', padding: '6px 12px', fontSize: 12.5, fontWeight: 500, color: C.text, border: '1px solid ' + C.line }}
+                >
+                  Clear filter
+                </button>
+              </div>
+            )}
+
             {simState === 'idle' ? (
               <div style={{ ...card, overflow: 'hidden', marginBottom: 22 }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid ' + C.line, fontSize: 13.5, fontWeight: 600 }}>
@@ -604,7 +703,7 @@ export default function Page() {
                       <div style={{ textAlign: 'right' }}>QUANTITY</div><div>TYPE</div>
                       <div style={{ textAlign: 'right' }}>NOTIONAL</div><div>CUSTODY ACCOUNT</div>
                     </div>
-                    {rows.map((row, i) => (
+                    {visible.map(({ row, i }) => (
                       <div key={row.id} style={{
                         display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 110px 1fr', gap: 10,
                         padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
@@ -619,6 +718,11 @@ export default function Page() {
                         <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.account}</div>
                       </div>
                     ))}
+                    {!visible.length && (
+                      <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13.5, color: C.muted }}>
+                        No {filter ? filter.toLowerCase() : ''} orders in this basket.
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -654,7 +758,7 @@ export default function Page() {
                       <div style={{ textAlign: 'right' }}>PRICE</div>
                       <div>STATUS</div><div>DETAIL</div>
                     </div>
-                    {rows.map((row, i) => {
+                    {visible.map(({ row, i }) => {
                       const e = execs[row.id] || {};
                       const pct = e.target ? Math.min(100, Math.round((e.filledQty / e.target) * 100)) : 0;
                       const tone = e.status === 'rejected' ? C.red : e.status === 'filled' ? C.accent : C.amber;
@@ -695,6 +799,11 @@ export default function Page() {
                         </div>
                       );
                     })}
+                    {!visible.length && (
+                      <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13.5, color: C.muted }}>
+                        No {filter ? filter.toLowerCase() : ''} orders in this basket.
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
