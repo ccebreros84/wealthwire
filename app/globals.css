@@ -11,6 +11,9 @@
   --red: #FF8C7F;
   --amber: #F0C25C;
   --blue: #5FA8FF;
+
+  --font-sans: 'Epunda Sans', system-ui, -apple-system, sans-serif;
+  --font-slab: 'Epunda Slab', Georgia, 'Times New Roman', serif;
 }
 
 * { box-sizing: border-box; }
@@ -20,14 +23,27 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--text);
-  font-family: 'Space Grotesk', system-ui, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  /* Neither Epunda face is monospaced, so lean on tabular figures to keep the
+     quantity, price and notional columns aligned down the blotter. */
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-slab);
+  font-weight: 700;
 }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--text); }
 
-input, button, select { font-family: inherit; }
+input, button, select {
+  font-family: inherit;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
 input::placeholder { color: #4C5872; }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
