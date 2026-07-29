@@ -12,7 +12,9 @@ const C = {
   text: '#E8EDF4', sub: '#A8B4C6', muted: '#8D99AC', dim: '#64708A',
   accent: '#3CF08F', red: '#FF8C7F', amber: '#F0C25C', blue: '#5FA8FF',
 };
-const mono = "'IBM Plex Mono', monospace";
+// Epunda Slab carries the data/label role the mono face used to hold: micro
+// labels, badges, tickers and figures. Tabular numerals come from globals.css.
+const slab = "'Epunda Slab', Georgia, serif";
 // Columns shown in the editable blotter. Asset class is parsed, validated and
 // exported as normal - it is only hidden from this grid for now.
 const HIDDEN_IN_GRID = ['assetClass'];
@@ -118,7 +120,7 @@ function Stepper({ step }) {
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: i <= at ? 1 : 0.4 }}>
             <span style={{
               width: 20, height: 20, borderRadius: '50%', display: 'grid', placeItems: 'center',
-              fontFamily: mono, fontSize: 10,
+              fontFamily: slab, fontSize: 10,
               border: '1px solid ' + (i <= at ? C.accent : C.line),
               background: i < at ? C.accent : 'transparent',
               color: i < at ? '#06090F' : (i === at ? C.accent : C.dim),
@@ -150,7 +152,7 @@ function Stat({ label, value, tone, sub, wide, onClick, active, disabled }) {
   const body = (
     <>
       <div style={{
-        fontFamily: mono, fontSize: 10, letterSpacing: '0.1em',
+        fontFamily: slab, fontSize: 10, letterSpacing: '0.1em',
         color: active ? accent : C.dim, marginBottom: 8,
         display: 'flex', alignItems: 'center', gap: 6,
       }}>
@@ -170,7 +172,7 @@ function Stat({ label, value, tone, sub, wide, onClick, active, disabled }) {
         )}
       </div>
       <div style={{ fontSize: wide ? 22 : 26, fontWeight: 600, lineHeight: 1.05, color: accent }}>{value}</div>
-      {sub && <div style={{ fontFamily: mono, fontSize: 10, color: C.dim, marginTop: 6 }}>{sub}</div>}
+      {sub && <div style={{ fontFamily: slab, fontSize: 10, color: C.dim, marginTop: 6 }}>{sub}</div>}
     </>
   );
 
@@ -472,16 +474,16 @@ export default function Page() {
         backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + C.hair,
       }}>
         <div style={{ maxWidth: 1320, margin: '0 auto', padding: '13px 22px', display: 'flex', alignItems: 'center', gap: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontFamily: slab, fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
             <Logo />
             <span>Wealth<span style={{ color: C.accent }}>Wire</span></span>
           </div>
           <span style={{
-            fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: C.accent,
+            fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.accent,
             border: '1px solid ' + C.accent + '55', borderRadius: 5, padding: '3px 7px',
           }}>DEMO</span>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20 }}>
-            <span style={{ fontFamily: mono, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>NOTHING IS SENT TO ANY BANK</span>
+            <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>NOTHING IS SENT TO ANY BANK</span>
             <a href="https://wealthwire.ch" style={{ fontSize: 13, color: C.sub }}>wealthwire.ch</a>
           </div>
         </div>
@@ -505,7 +507,7 @@ export default function Page() {
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 18 }}>
               <div style={{ ...card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 01</div>
+                <div style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 01</div>
                 <div style={{ fontSize: 17, fontWeight: 600 }}>Get the Excel template</div>
                 <div style={{ fontSize: 13.5, lineHeight: 1.55, color: C.muted }}>
                   Nine columns, four example rows, and a sheet explaining every field and every check we run.
@@ -513,7 +515,7 @@ export default function Page() {
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, margin: '2px 0 4px' }}>
                   {COLUMNS.map(c => (
                     <span key={c.key} style={{
-                      fontFamily: mono, fontSize: 10.5, color: c.required ? C.sub : C.dim,
+                      fontFamily: slab, fontSize: 10.5, color: c.required ? C.sub : C.dim,
                       border: '1px solid ' + C.line, borderRadius: 5, padding: '4px 7px',
                     }}>{c.label}{c.required ? ' *' : ''}</span>
                   ))}
@@ -533,7 +535,7 @@ export default function Page() {
                   background: dragging ? 'rgba(60, 240, 143, 0.05)' : C.panel,
                 }}
               >
-                <div style={{ fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 02</div>
+                <div style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 02</div>
                 <div style={{ fontSize: 17, fontWeight: 600 }}>Upload your order sheet</div>
                 <div style={{ fontSize: 13.5, lineHeight: 1.55, color: C.muted }}>
                   Drop the file here, or pick it from your machine. .xlsx, .xls and .csv all work.
@@ -564,7 +566,7 @@ export default function Page() {
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
               <div>
                 <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>Validate and review</h2>
-                <div style={{ fontFamily: mono, fontSize: 11.5, color: C.dim }}>
+                <div style={{ fontFamily: slab, fontSize: 11.5, color: C.dim }}>
                   {fileName} · {rows.length} ORDER{rows.length === 1 ? '' : 'S'}
                 </div>
               </div>
@@ -602,7 +604,7 @@ export default function Page() {
                   <div style={{
                     display: 'grid', gridTemplateColumns: '34px ' + GRID + ' 34px', gap: 10,
                     padding: '10px 15px', borderBottom: '1px solid ' + C.line,
-                    fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
+                    fontFamily: slab, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
                   }}>
                     <div>#</div>
                     {GRID_COLUMNS.map(c => <div key={c.key} style={{ textAlign: c.align === 'right' ? 'right' : 'left' }}>{c.label.toUpperCase()}</div>)}
@@ -618,7 +620,7 @@ export default function Page() {
                         padding: '4px 15px', borderBottom: '1px solid ' + C.hair, alignItems: 'center',
                         background: bad ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
                       }}>
-                        <div style={{ fontFamily: mono, fontSize: 11, color: bad ? C.red : '#4C5872' }}>{i + 1}</div>
+                        <div style={{ fontFamily: slab, fontSize: 11, color: bad ? C.red : '#4C5872' }}>{i + 1}</div>
                         {GRID_COLUMNS.map(c => {
                           // An issue raised against a hidden column would have no cell to
                           // highlight, so it surfaces on Instrument instead.
@@ -637,7 +639,7 @@ export default function Page() {
                                 border: '1px solid ' + (issue ? (issue.level === 'error' ? C.red + '99' : C.amber + '77') : 'transparent'),
                                 borderRadius: 5, padding: '7px 8px', outline: 'none',
                                 color: issue ? (issue.level === 'error' ? C.red : C.amber) : (c.mono ? C.sub : C.text),
-                                fontFamily: c.mono ? mono : 'inherit',
+                                fontFamily: c.mono ? slab : 'inherit',
                                 fontSize: c.mono ? 12 : 13,
                                 textAlign: c.align === 'right' ? 'right' : 'left',
                               }}
@@ -668,8 +670,8 @@ export default function Page() {
                       display: 'flex', gap: 12, alignItems: 'baseline', padding: '9px 16px',
                       borderBottom: '1px solid ' + C.hair, fontSize: 13,
                     }}>
-                      <span style={{ fontFamily: mono, fontSize: 11, color: C.dim, minWidth: 52 }}>ROW {i + 1}</span>
-                      <span style={{ color: issue.level === 'error' ? C.red : C.amber, minWidth: 68, fontFamily: mono, fontSize: 11 }}>
+                      <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, minWidth: 52 }}>ROW {i + 1}</span>
+                      <span style={{ color: issue.level === 'error' ? C.red : C.amber, minWidth: 68, fontFamily: slab, fontSize: 11 }}>
                         {issue.level === 'error' ? 'ERROR' : 'WARNING'}
                       </span>
                       <span style={{ color: C.sub }}>{issue.message}</span>
@@ -688,7 +690,7 @@ export default function Page() {
                 <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>
                   {simState === 'idle' ? 'Confirm and route' : simState === 'running' ? 'Routing simulation' : 'Execution report'}
                 </h2>
-                <div style={{ fontFamily: mono, fontSize: 11.5, color: C.dim }}>
+                <div style={{ fontFamily: slab, fontSize: 11.5, color: C.dim }}>
                   {simState === 'idle'
                     ? 'THE LAST SCREEN BEFORE ORDERS LEAVE THE BUILDING'
                     : simState === 'running'
@@ -757,13 +759,13 @@ export default function Page() {
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
                       <span style={{
-                        fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: '#06090F',
+                        fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: '#06090F',
                         background: C.accent, borderRadius: 5, padding: '4px 8px', fontWeight: 600,
                       }}>
                         NEXT STEP · 1 OF 2
                       </span>
                       <span style={{
-                        fontFamily: mono, fontSize: 10, letterSpacing: '0.1em', color: C.accent,
+                        fontFamily: slab, fontSize: 10, letterSpacing: '0.1em', color: C.accent,
                         animation: 'ww-blip 1.8s ease-in-out infinite',
                       }}>
                         REQUIRED
@@ -797,7 +799,7 @@ export default function Page() {
                       <div style={{ fontSize: 15, fontWeight: 600 }}>
                         Routing to <span style={{ color: C.accent }}>{bank}</span>
                       </div>
-                      <div style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.08em', color: C.dim, marginTop: 3 }}>
+                      <div style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.08em', color: C.dim, marginTop: 3 }}>
                         CUSTODIAN SELECTED · STEP 1 OF 2 DONE
                       </div>
                     </div>
@@ -829,7 +831,7 @@ export default function Page() {
                 border: '1px solid ' + (FILTER_TONE[filter] || C.accent) + '55',
                 background: (FILTER_TONE[filter] || C.accent) + '10',
               }}>
-                <span style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.1em', color: FILTER_TONE[filter] || C.accent }}>
+                <span style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.1em', color: FILTER_TONE[filter] || C.accent }}>
                   FILTERED · {filter}
                 </span>
                 <span style={{ fontSize: 13, color: C.sub }}>
@@ -855,7 +857,7 @@ export default function Page() {
                     <div style={{
                       display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 110px 1fr', gap: 10,
                       padding: '9px 16px', borderBottom: '1px solid ' + C.line,
-                      fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
+                      fontFamily: slab, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
                     }}>
                       <div>#</div><div>INSTRUMENT</div><div>ISIN</div><div>SIDE</div>
                       <div style={{ textAlign: 'right' }}>QUANTITY</div><div>TYPE</div>
@@ -866,14 +868,14 @@ export default function Page() {
                         display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 110px 1fr', gap: 10,
                         padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
                       }}>
-                        <div style={{ fontFamily: mono, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
+                        <div style={{ fontFamily: slab, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
                         <div>{row.instrument}</div>
-                        <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.isin}</div>
-                        <div style={{ fontFamily: mono, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
-                        <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{row.quantity}</div>
+                        <div style={{ fontFamily: slab, fontSize: 11.5, color: C.muted }}>{row.isin}</div>
+                        <div style={{ fontFamily: slab, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
+                        <div style={{ fontFamily: slab, fontSize: 12, color: C.sub, textAlign: 'right' }}>{row.quantity}</div>
                         <div style={{ fontSize: 12, color: C.muted }}>{row.orderType}{row.limit ? ' ' + row.limit : ''}</div>
-                        <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{fmtAmount(notionalOf(row))}</div>
-                        <div style={{ fontFamily: mono, fontSize: 11.5, color: C.muted }}>{row.account}</div>
+                        <div style={{ fontFamily: slab, fontSize: 12, color: C.sub, textAlign: 'right' }}>{fmtAmount(notionalOf(row))}</div>
+                        <div style={{ fontFamily: slab, fontSize: 11.5, color: C.muted }}>{row.account}</div>
                       </div>
                     ))}
                     {!visible.length && (
@@ -891,14 +893,14 @@ export default function Page() {
                   alignItems: 'center', gap: 14, flexWrap: 'wrap',
                 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600 }}>Execution blotter</span>
-                  <span style={{ fontFamily: mono, fontSize: 11, color: C.dim }}>
+                  <span style={{ fontFamily: slab, fontSize: 11, color: C.dim }}>
                     {execStats.filled}/{rows.length} FILLED
                     {execStats.rejected ? ' · ' + execStats.rejected + ' REJECTED' : ''}
                     {execStats.pending ? ' · ' + execStats.pending + ' WORKING' : ''}
                   </span>
                   {simState === 'running' && (
                     <span style={{
-                      marginLeft: 'auto', fontFamily: mono, fontSize: 10.5, letterSpacing: '0.1em',
+                      marginLeft: 'auto', fontFamily: slab, fontSize: 10.5, letterSpacing: '0.1em',
                       color: C.accent, animation: 'ww-blip 1.4s ease-in-out infinite',
                     }}>● LIVE</span>
                   )}
@@ -908,7 +910,7 @@ export default function Page() {
                     <div style={{
                       display: 'grid', gridTemplateColumns: '34px 1.15fr 60px 88px 88px 96px 110px 1.1fr', gap: 10,
                       padding: '9px 16px', borderBottom: '1px solid ' + C.line,
-                      fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
+                      fontFamily: slab, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
                     }}>
                       <div>#</div><div>INSTRUMENT</div><div>SIDE</div>
                       <div style={{ textAlign: 'right' }}>ORDERED</div>
@@ -930,17 +932,17 @@ export default function Page() {
                           opacity: e.phase === 'queued' ? 0.55 : 1,
                           transition: 'opacity 0.3s ease, background 0.3s ease',
                         }}>
-                          <div style={{ fontFamily: mono, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
+                          <div style={{ fontFamily: slab, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
                           <div>{row.instrument}</div>
-                          <div style={{ fontFamily: mono, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
-                          <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{fmtAmount(e.target || 0)}</div>
-                          <div style={{ fontFamily: mono, fontSize: 12, color: e.filledQty ? tone : C.dim, textAlign: 'right' }}>{fmtAmount(e.filledQty || 0)}</div>
-                          <div style={{ fontFamily: mono, fontSize: 12, color: C.muted, textAlign: 'right' }}>
+                          <div style={{ fontFamily: slab, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
+                          <div style={{ fontFamily: slab, fontSize: 12, color: C.sub, textAlign: 'right' }}>{fmtAmount(e.target || 0)}</div>
+                          <div style={{ fontFamily: slab, fontSize: 12, color: e.filledQty ? tone : C.dim, textAlign: 'right' }}>{fmtAmount(e.filledQty || 0)}</div>
+                          <div style={{ fontFamily: slab, fontSize: 12, color: C.muted, textAlign: 'right' }}>
                             {e.phase === 'filled' ? e.price.toFixed(2) : '—'}
                           </div>
                           <div>
                             <span style={{
-                              fontFamily: mono, fontSize: 10, letterSpacing: '0.08em', color: tone,
+                              fontFamily: slab, fontSize: 10, letterSpacing: '0.08em', color: tone,
                               border: '1px solid ' + tone + '55', background: tone + '12',
                               borderRadius: 5, padding: '3px 7px', display: 'inline-block', minWidth: 62, textAlign: 'center',
                               animation: e.phase === 'nack' || e.phase === 'ack' ? 'ww-blip 0.9s ease-in-out 2' : 'none',
@@ -951,7 +953,7 @@ export default function Page() {
                           <div style={{
                             fontSize: 11.5,
                             color: settled || e.phase === 'nack' ? (e.phase === 'filled' ? C.dim : C.red) : C.dim,
-                            fontFamily: e.phase === 'rejected' || e.phase === 'nack' ? 'inherit' : mono,
+                            fontFamily: e.phase === 'rejected' || e.phase === 'nack' ? 'inherit' : slab,
                           }}>
                             {e.phase === 'rejected' || e.phase === 'nack'
                               ? e.reason
@@ -1040,7 +1042,7 @@ export default function Page() {
           }}>
             {!sent ? (
               <form onSubmit={submitLead}>
-                <div style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.14em', color: C.accent, marginBottom: 12 }}>
+                <div style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.14em', color: C.accent, marginBottom: 12 }}>
                   {gateMode === 'export' ? 'YOUR EXECUTIONS ARE READY' : 'ONE STEP LEFT'}
                 </div>
                 <h3 style={{ margin: '0 0 10px', fontSize: 22, letterSpacing: '-0.02em' }}>
@@ -1133,7 +1135,7 @@ export default function Page() {
                   {gateMode === 'export' ? (
                     <>
                       {downloaded
-                        ? <>Your execution file <span style={{ fontFamily: mono, fontSize: 13, color: C.accent }}>{downloaded}</span> has downloaded. </>
+                        ? <>Your execution file <span style={{ fontFamily: slab, fontSize: 13, color: C.accent }}>{downloaded}</span> has downloaded. </>
                         : <>Your details are saved. </>}
                       Thanks for getting on the waitlist — we'll be in touch before launch, and your basket of{' '}
                       {summary.total} order{summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly
