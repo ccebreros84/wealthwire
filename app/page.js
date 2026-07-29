@@ -1022,10 +1022,7 @@ export default function Page() {
           gap: '10px 26px', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: C.dim,
         }}>
           <div>© {new Date().getFullYear()} WealthWire · a demo, not a trading system</div>
-          <div style={{ display: 'flex', gap: 20 }}>
-            <a href="mailto:hello@wealthwire.ch" style={{ color: C.muted }}>hello@wealthwire.ch</a>
-            <a href="https://wealthwire.ch/privacy" style={{ color: C.muted }}>Privacy</a>
-          </div>
+          <a href="https://wealthwire.ch" style={{ color: C.muted }}>wealthwire.ch</a>
         </div>
       </footer>
     </main>
