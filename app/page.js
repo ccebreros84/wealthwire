@@ -60,6 +60,40 @@ const FILTER_LABEL = {
   WARNINGS: 'orders with warnings',
 };
 
+// Order lifecycle, in the order a FIX session would report it.
+// queued → sent → ack → ready → working → partial → filled
+//                  └→ nack → rejected
+const PHASE = {
+  queued:   { label: 'QUEUED',   tone: C.dim,    note: 'waiting to be sent' },
+  sent:     { label: 'SENT',     tone: C.blue,   note: 'awaiting ack' },
+  ack:      { label: 'ACK',      tone: C.blue,   note: 'accepted by custodian' },
+  ready:    { label: 'READY',    tone: C.blue,   note: 'queued at venue' },
+  working:  { label: 'WORKING',  tone: C.amber,  note: 'live at venue' },
+  partial:  { label: 'PARTIAL',  tone: C.amber,  note: '' },
+  nack:     { label: 'NACK',     tone: C.red,    note: '' },
+  rejected: { label: 'REJECTED', tone: C.red,    note: '' },
+  filled:   { label: 'FILLED',   tone: C.accent, note: '' },
+};
+
+const TERMINAL = { rejected: true, filled: true };
+
+function derivePhase(e, now) {
+  if (e.willReject) {
+    if (now < e.tSent) return { phase: 'queued', filled: 0 };
+    if (now < e.tAck) return { phase: 'sent', filled: 0 };
+    if (now < e.tRejected) return { phase: 'nack', filled: 0 };
+    return { phase: 'rejected', filled: 0 };
+  }
+  if (now < e.tSent) return { phase: 'queued', filled: 0 };
+  if (now < e.tAck) return { phase: 'sent', filled: 0 };
+  if (now < e.tReady) return { phase: 'ack', filled: 0 };
+  if (now < e.tWorking) return { phase: 'ready', filled: 0 };
+  if (now >= e.tEnd) return { phase: 'filled', filled: e.target };
+  const p = Math.max(0, Math.min(1, (now - e.tWorking) / Math.max(1, e.tEnd - e.tWorking)));
+  const filled = Math.floor(e.target * p);
+  return { phase: filled > 0 ? 'partial' : 'working', filled };
+}
+
 function Logo() {
   return (
     <svg width="30" height="20" viewBox="0 0 36 24" aria-hidden="true">
@@ -280,24 +314,36 @@ export default function Page() {
     const ranked = [...rows].sort((a, b) => hashString(a.isin + a.id) - hashString(b.isin + b.id));
     const rejected = new Set(ranked.slice(0, rejectCount).map(r => r.id));
 
-    const totalMs = Math.min(55000, 5000 + n * 900);
+    const totalMs = Math.min(46000, 4000 + n * 850);
     const now = Date.now();
+    const stagger = Math.min(140, 3500 / Math.max(1, n));
     const plan = {};
 
     rows.forEach((r, i) => {
-      const frac = n <= 1 ? 1 : (i + 1) / n;
-      const jitter = 0.7 + (hashString(r.isin + 's') % 55) / 100;   // 0.70 – 1.25
-      const end = now + 600 + Math.min(totalMs, totalMs * frac * jitter);
+      const h = hashString(r.isin + r.id);
+      const willReject = rejected.has(r.id);
       const pool = rejectReasonsFor(r);
+
+      const tSent = now + 300 + i * stagger;
+      const tAck = tSent + 260 + (h % 560);                       // ack/nack lands first
+      const tRejected = willReject ? tAck + 1100 : null;          // NACK stays visible ~1.1s
+      const tReady = tAck + 160 + ((h >> 3) % 320);
+      const tWorking = tReady + 260 + ((h >> 6) % 620);
+
+      const frac = n <= 1 ? 1 : (i + 1) / n;
+      const jitter = 0.7 + ((h >> 9) % 55) / 100;                 // 0.70 – 1.25
+      const span = Math.max(1400, Math.min(totalMs, totalMs * frac * jitter));
+      const tEnd = Math.min(tWorking + span, now + 55000);        // hard 60s ceiling
+
       plan[r.id] = {
         status: 'pending',
+        phase: 'queued',
         filledQty: 0,
         target: qty(r),
         price: priceFor(r),
-        start: now + 500,
-        end,
-        willReject: rejected.has(r.id),
-        reason: rejected.has(r.id) ? pool[hashString(r.isin + r.side) % pool.length] : '',
+        willReject,
+        reason: willReject ? pool[hashString(r.isin + r.side) % pool.length] : '',
+        tSent, tAck, tRejected, tReady, tWorking, tEnd,
         execId: '',
         completedAt: '',
       };
@@ -317,41 +363,36 @@ export default function Page() {
         let changed = false;
         for (const id of Object.keys(prev)) {
           const e = prev[id];
-          if (e.status !== 'pending') { next[id] = e; continue; }
+          if (TERMINAL[e.phase]) { next[id] = e; continue; }
 
-          if (e.willReject) {
-            const at = e.start + (e.end - e.start) * 0.4;
-            if (now >= at) {
-              next[id] = { ...e, status: 'rejected', filledQty: 0, completedAt: execStamp() };
-              changed = true;
-            } else next[id] = e;
-            continue;
-          }
+          const { phase, filled } = derivePhase(e, now);
+          if (phase === e.phase && filled === e.filledQty) { next[id] = e; continue; }
 
-          const span = Math.max(1, e.end - e.start);
-          const p = Math.max(0, Math.min(1, (now - e.start) / span));
-          if (p >= 1) {
-            next[id] = {
-              ...e, status: 'filled', filledQty: e.target, completedAt: execStamp(),
-              execId: 'WW-' + String(hashString(id + e.end) % 1000000).padStart(6, '0'),
-            };
-            changed = true;
-          } else {
-            const q = Math.floor(e.target * p);
-            if (q !== e.filledQty) changed = true;
-            next[id] = { ...e, filledQty: q };
-          }
+          changed = true;
+          const status = phase === 'filled' ? 'filled' : phase === 'rejected' ? 'rejected' : 'pending';
+          const justSettled = TERMINAL[phase] && !TERMINAL[e.phase];
+
+          next[id] = {
+            ...e,
+            phase,
+            status,
+            filledQty: filled,
+            completedAt: justSettled ? execStamp() : e.completedAt,
+            execId: phase === 'filled' && !e.execId
+              ? 'WW-' + String(hashString(id + e.tEnd) % 1000000).padStart(6, '0')
+              : e.execId,
+          };
         }
         return changed ? next : prev;
       });
-    }, 320);
+    }, 200);
     return () => clearInterval(iv);
   }, [simState]);
 
   useEffect(() => {
     if (simState !== 'running') return;
     const vals = Object.values(execs);
-    if (vals.length && vals.every(e => e.status !== 'pending')) setSimState('done');
+    if (vals.length && vals.every(e => TERMINAL[e.phase])) setSimState('done');
   }, [execs, simState]);
 
   // ── lead submit ───────────────────────────────────────────────────────────
@@ -538,7 +579,7 @@ export default function Page() {
 
             <div style={{ ...card, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 1080 }}>
+                <div style={{ minWidth: 1200 }}>
                   <div style={{
                     display: 'grid', gridTemplateColumns: '34px ' + GRID + ' 34px', gap: 10,
                     padding: '10px 15px', borderBottom: '1px solid ' + C.line,
@@ -792,41 +833,52 @@ export default function Page() {
                     </div>
                     {visible.map(({ row, i }) => {
                       const e = execs[row.id] || {};
-                      const pct = e.target ? Math.min(100, Math.round((e.filledQty / e.target) * 100)) : 0;
-                      const tone = e.status === 'rejected' ? C.red : e.status === 'filled' ? C.accent : C.amber;
+                      const ph = PHASE[e.phase] || PHASE.queued;
+                      const pct = e.target ? Math.min(100, Math.round(((e.filledQty || 0) / e.target) * 100)) : 0;
+                      const tone = ph.tone;
+                      const settled = TERMINAL[e.phase];
                       return (
                         <div key={row.id} style={{
                           display: 'grid', gridTemplateColumns: '34px 1.15fr 60px 88px 88px 96px 110px 1.1fr', gap: 10,
                           padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
-                          background: e.status === 'rejected' ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
+                          background: e.phase === 'rejected' || e.phase === 'nack' ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
+                          opacity: e.phase === 'queued' ? 0.55 : 1,
+                          transition: 'opacity 0.3s ease, background 0.3s ease',
                         }}>
                           <div style={{ fontFamily: mono, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
                           <div>{row.instrument}</div>
                           <div style={{ fontFamily: mono, fontSize: 11.5, color: row.side === 'SELL' ? C.blue : C.accent }}>{row.side}</div>
                           <div style={{ fontFamily: mono, fontSize: 12, color: C.sub, textAlign: 'right' }}>{fmtAmount(e.target || 0)}</div>
-                          <div style={{ fontFamily: mono, fontSize: 12, color: tone, textAlign: 'right' }}>{fmtAmount(e.filledQty || 0)}</div>
+                          <div style={{ fontFamily: mono, fontSize: 12, color: e.filledQty ? tone : C.dim, textAlign: 'right' }}>{fmtAmount(e.filledQty || 0)}</div>
                           <div style={{ fontFamily: mono, fontSize: 12, color: C.muted, textAlign: 'right' }}>
-                            {e.status === 'filled' ? e.price.toFixed(2) : '—'}
+                            {e.phase === 'filled' ? e.price.toFixed(2) : '—'}
                           </div>
                           <div>
                             <span style={{
                               fontFamily: mono, fontSize: 10, letterSpacing: '0.08em', color: tone,
                               border: '1px solid ' + tone + '55', background: tone + '12',
-                              borderRadius: 5, padding: '3px 7px',
+                              borderRadius: 5, padding: '3px 7px', display: 'inline-block', minWidth: 62, textAlign: 'center',
+                              animation: e.phase === 'nack' || e.phase === 'ack' ? 'ww-blip 0.9s ease-in-out 2' : 'none',
                             }}>
-                              {e.status === 'filled' ? 'FILLED' : e.status === 'rejected' ? 'REJECTED' : pct + '%'}
+                              {e.phase === 'partial' ? pct + '%' : ph.label}
                             </span>
                           </div>
-                          <div style={{ fontSize: 11.5, color: e.status === 'rejected' ? C.red : C.dim, fontFamily: e.status === 'rejected' ? 'inherit' : mono }}>
-                            {e.status === 'rejected'
+                          <div style={{
+                            fontSize: 11.5,
+                            color: settled || e.phase === 'nack' ? (e.phase === 'filled' ? C.dim : C.red) : C.dim,
+                            fontFamily: e.phase === 'rejected' || e.phase === 'nack' ? 'inherit' : mono,
+                          }}>
+                            {e.phase === 'rejected' || e.phase === 'nack'
                               ? e.reason
-                              : e.status === 'filled'
+                              : e.phase === 'filled'
                                 ? e.execId
-                                : (
-                                  <span style={{ display: 'inline-block', width: '100%', maxWidth: 140, height: 4, background: C.hair, borderRadius: 3, overflow: 'hidden', verticalAlign: 'middle' }}>
-                                    <span style={{ display: 'block', width: pct + '%', height: '100%', background: C.amber, transition: 'width 0.3s linear' }} />
-                                  </span>
-                                )}
+                                : e.phase === 'working' || e.phase === 'partial'
+                                  ? (
+                                    <span style={{ display: 'inline-block', width: '100%', maxWidth: 140, height: 4, background: C.hair, borderRadius: 3, overflow: 'hidden', verticalAlign: 'middle' }}>
+                                      <span style={{ display: 'block', width: pct + '%', height: '100%', background: C.amber, transition: 'width 0.25s linear' }} />
+                                    </span>
+                                  )
+                                  : ph.note}
                           </div>
                         </div>
                       );
