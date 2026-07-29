@@ -13,7 +13,11 @@ const C = {
   accent: '#3CF08F', red: '#FF8C7F', amber: '#F0C25C', blue: '#5FA8FF',
 };
 const mono = "'IBM Plex Mono', monospace";
-const GRID = COLUMNS.map(c => c.width).join(' ');
+// Columns shown in the editable blotter. Asset class is parsed, validated and
+// exported as normal - it is only hidden from this grid for now.
+const HIDDEN_IN_GRID = ['assetClass'];
+const GRID_COLUMNS = COLUMNS.filter(c => !HIDDEN_IN_GRID.includes(c.key));
+const GRID = GRID_COLUMNS.map(c => c.width).join(' ');
 
 const card = { border: '1px solid ' + C.line, borderRadius: 10, background: C.panel };
 const btn = {
@@ -211,8 +215,23 @@ export default function Page() {
   const [execs, setExecs] = useState({});
   const [tick, setTick] = useState(0);
   const [filter, setFilter] = useState(null);           // null | 'BUY' | 'SELL' | 'REJECTED' | 'WARNINGS'
+  const [flashBank, setFlashBank] = useState(false);
 
   const fileRef = useRef(null);
+  const bankRef = useRef(null);
+  const routeRef = useRef(null);
+
+  const scrollToRoute = () => {
+    if (routeRef.current) routeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  };
+
+  // Sends the user back up to the custodian list and flashes it, so a click on
+  // the locked route button explains itself instead of doing nothing.
+  const nudgeBank = () => {
+    if (bankRef.current) bankRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setFlashBank(true);
+    window.setTimeout(() => setFlashBank(false), 1600);
+  };
 
   const { issues, errors, warnings } = useMemo(() => validate(rows), [rows]);
 
@@ -287,7 +306,7 @@ export default function Page() {
   const reset = () => {
     setStep('start'); setRows([]); setFileName(''); setHeaderError(null); setBank('');
     setGate(false); setSent(false); setEmail(''); setGateBanks([]); setBankInput(''); setGateError('');
-    setSimState('idle'); setExecs({}); setDownloaded(''); setGateMode('access'); setFilter(null);
+    setSimState('idle'); setExecs({}); setDownloaded(''); setGateMode('access'); setFilter(null); setFlashBank(false);
   };
 
   const openGate = (mode) => {
@@ -579,14 +598,14 @@ export default function Page() {
 
             <div style={{ ...card, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 1200 }}>
+                <div style={{ minWidth: 1080 }}>
                   <div style={{
                     display: 'grid', gridTemplateColumns: '34px ' + GRID + ' 34px', gap: 10,
                     padding: '10px 15px', borderBottom: '1px solid ' + C.line,
                     fontFamily: mono, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
                   }}>
                     <div>#</div>
-                    {COLUMNS.map(c => <div key={c.key} style={{ textAlign: c.align === 'right' ? 'right' : 'left' }}>{c.label.toUpperCase()}</div>)}
+                    {GRID_COLUMNS.map(c => <div key={c.key} style={{ textAlign: c.align === 'right' ? 'right' : 'left' }}>{c.label.toUpperCase()}</div>)}
                     <div />
                   </div>
 
@@ -600,8 +619,13 @@ export default function Page() {
                         background: bad ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
                       }}>
                         <div style={{ fontFamily: mono, fontSize: 11, color: bad ? C.red : '#4C5872' }}>{i + 1}</div>
-                        {COLUMNS.map(c => {
-                          const issue = rowIssues[c.key];
+                        {GRID_COLUMNS.map(c => {
+                          // An issue raised against a hidden column would have no cell to
+                          // highlight, so it surfaces on Instrument instead.
+                          const hiddenIssue = c.key === 'instrument'
+                            ? HIDDEN_IN_GRID.map(k => rowIssues[k]).find(Boolean)
+                            : null;
+                          const issue = rowIssues[c.key] || hiddenIssue;
                           return (
                             <input
                               key={c.key}
@@ -715,25 +739,86 @@ export default function Page() {
             </div>
 
             {simState === 'idle' && (
-              <div style={{ ...card, padding: 20, marginBottom: 18 }}>
-                <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 6 }}>Route this basket to</div>
-                <div style={{ fontSize: 13, color: C.muted, marginBottom: 14 }}>
-                  Pick the custodian that holds these accounts. In the live product this is a FIX session; here it only
-                  tells us which bank you need first.
-                </div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {BANKS.map(b => (
-                    <button
-                      key={b} type="button" onClick={() => setBank(b)}
-                      style={{
-                        all: 'unset', cursor: 'pointer', padding: '9px 14px', borderRadius: 7, fontSize: 13.5,
-                        border: '1px solid ' + (bank === b ? C.accent : C.line),
-                        background: bank === b ? C.accent + '18' : 'transparent',
-                        color: bank === b ? C.accent : C.sub,
-                      }}
-                    >{b}</button>
-                  ))}
-                </div>
+              <div
+                ref={bankRef}
+                style={{
+                  ...card,
+                  padding: 20,
+                  marginBottom: 18,
+                  borderColor: flashBank ? C.amber : (bank ? C.line : C.accent + '66'),
+                  background: flashBank ? C.amber + '10' : (bank ? C.panel : 'rgba(60, 240, 143, 0.04)'),
+                  boxShadow: flashBank
+                    ? '0 0 0 3px ' + C.amber + '33'
+                    : (bank ? 'none' : '0 0 0 1px ' + C.accent + '22'),
+                  transition: 'border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease',
+                }}
+              >
+                {!bank ? (
+                  <>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
+                      <span style={{
+                        fontFamily: mono, fontSize: 10, letterSpacing: '0.12em', color: '#06090F',
+                        background: C.accent, borderRadius: 5, padding: '4px 8px', fontWeight: 600,
+                      }}>
+                        NEXT STEP · 1 OF 2
+                      </span>
+                      <span style={{
+                        fontFamily: mono, fontSize: 10, letterSpacing: '0.1em', color: C.accent,
+                        animation: 'ww-blip 1.8s ease-in-out infinite',
+                      }}>
+                        REQUIRED
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>Pick the custodian for this basket</div>
+                    <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, maxWidth: 640, lineHeight: 1.55 }}>
+                      Choose the bank that holds these accounts. Routing stays locked until you do. In the live product
+                      this selects the FIX session; here it only tells us which bank you need first.
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {BANKS.map(b => (
+                        <button
+                          key={b} type="button" onClick={() => { setBank(b); setFlashBank(false); }}
+                          style={{
+                            all: 'unset', cursor: 'pointer', padding: '11px 16px', borderRadius: 7, fontSize: 13.5,
+                            border: '1px solid ' + C.line, background: 'transparent', color: C.text,
+                            transition: 'border-color 0.15s ease, background 0.15s ease',
+                          }}
+                        >{b}</button>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+                    <svg width="20" height="20" viewBox="0 0 22 22" aria-hidden="true" style={{ flexShrink: 0 }}>
+                      <circle cx="11" cy="11" r="10" fill="none" stroke={C.accent} strokeWidth="1.5" />
+                      <path d="M6.5 11.5 L 9.5 14.5 L 15.5 8" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 600 }}>
+                        Routing to <span style={{ color: C.accent }}>{bank}</span>
+                      </div>
+                      <div style={{ fontFamily: mono, fontSize: 10.5, letterSpacing: '0.08em', color: C.dim, marginTop: 3 }}>
+                        CUSTODIAN SELECTED · STEP 1 OF 2 DONE
+                      </div>
+                    </div>
+                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      {rows.length > 50 && (
+                        <button
+                          type="button" onClick={scrollToRoute}
+                          style={{ ...glass, padding: '10px 16px', fontSize: 13 }}
+                        >
+                          Jump to routing ↓
+                        </button>
+                      )}
+                      <button
+                        type="button" onClick={() => setBank('')}
+                        style={{ ...btn, padding: '10px 14px', fontSize: 13, fontWeight: 500, color: C.muted, border: '1px solid ' + C.line }}
+                      >
+                        Change
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -894,15 +979,25 @@ export default function Page() {
             )}
 
             {simState === 'idle' && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+              <div ref={routeRef} style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', scrollMarginTop: 90 }}>
                 <button
-                  type="button" onClick={() => openGate('access')} disabled={!bank}
-                  style={{ ...primary, padding: '15px 26px', fontSize: 15, opacity: bank ? 1 : 0.35, cursor: bank ? 'pointer' : 'not-allowed' }}
+                  type="button"
+                  onClick={() => (bank ? openGate('access') : nudgeBank())}
+                  aria-disabled={!bank}
+                  style={{
+                    ...primary, padding: '15px 26px', fontSize: 15,
+                    opacity: bank ? 1 : 0.4,
+                    cursor: 'pointer',
+                  }}
                 >
-                  Route {summary.total} order{summary.total === 1 ? '' : 's'} via FIX
+                  {bank
+                    ? 'Route ' + summary.total + ' order' + (summary.total === 1 ? '' : 's') + ' via FIX'
+                    : 'Pick a custodian to unlock routing'}
                 </button>
-                <span style={{ fontSize: 13, color: C.dim }}>
-                  {bank ? 'Routing is disabled in this demo — nothing reaches ' + bank + '.' : 'Pick a custodian bank first.'}
+                <span style={{ fontSize: 13, color: bank ? C.dim : C.amber }}>
+                  {bank
+                    ? 'Step 2 of 2 · routing is disabled in this demo — nothing reaches ' + bank + '.'
+                    : 'Step 1 of 2 is still open — tap here to jump back to the custodian list.'}
                 </span>
               </div>
             )}
