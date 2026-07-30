@@ -145,12 +145,21 @@ function derivePhase(e, now) {
   return { phase: filled > 0 ? 'partial' : 'working', filled };
 }
 
-function Logo() {
+// The WealthWire mark: skewed zigzag W crossed by the accent bar. The W picks
+// up currentColor so it inherits whatever text colour it sits in.
+function Logo({ size = 24 }) {
   return (
-    <svg width="30" height="20" viewBox="0 0 36 24" aria-hidden="true">
-      <path d="M4 7 L 10.5 19 L 17 7 L 23.5 19 L 30 7" fill="none" stroke={C.text} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M4 7 L 29.4 7" fill="none" stroke={C.accent} strokeWidth="3.2" strokeLinecap="round" />
-      <path d="M28.1 3.5 L 30 7" fill="none" stroke={C.accent} strokeWidth="3.2" strokeLinecap="round" />
+    <svg
+      width={size} height={size} viewBox="0 0 64 64" aria-hidden="true"
+      style={{ display: 'block', flexShrink: 0 }}
+    >
+      <path
+        d="M12 25 L 22 43 L 32 25 L 42 43 L 52 25"
+        transform="translate(4.8,0) skewX(-8)"
+        fill="none" stroke="currentColor" strokeWidth="5.5"
+        strokeLinecap="butt" strokeLinejoin="miter" strokeMiterlimit="12"
+      />
+      <path d="M6 34 H 58" fill="none" stroke={C.accent} strokeWidth="5.5" strokeLinecap="butt" />
     </svg>
   );
 }
@@ -542,7 +551,7 @@ export default function Page() {
           <div style={{ animation: 'ww-in 0.4s ease both' }}>
             <div style={{ maxWidth: 700, marginBottom: 30 }}>
               <h1 style={{ margin: '0 0 12px', fontSize: 'clamp(26px, 3.4vw, 38px)', letterSpacing: '-0.025em', lineHeight: 1.1 }}>
-                Take an order sheet all the way to routed.
+                Take an order sheet all the way to filled.
               </h1>
               <p style={{ margin: 0, fontSize: 16, lineHeight: 1.55, color: C.sub }}>
                 Download the template, fill it with your own orders, and upload it. WealthWire checks it the way it
