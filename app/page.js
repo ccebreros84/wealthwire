@@ -23,7 +23,7 @@ const GRID = GRID_COLUMNS.map(c => c.width).join(' ');
 
 // Blotter layout, mirroring the landing page: time, instrument, side, quantity,
 // filled, progress, avg price, bank, client, status.
-const BLOTTER_GRID = '76px 1.35fr 54px 96px 96px minmax(130px, 1.5fr) 88px 92px 116px 138px';
+const BLOTTER_GRID = '76px 1.2fr 54px 92px 92px minmax(110px, 1fr) 84px 88px 112px minmax(300px, 1.5fr)';
 
 const card = { border: '1px solid ' + C.line, borderRadius: 10, background: C.panel };
 const btn = {
@@ -960,7 +960,7 @@ export default function Page() {
                   </span>
                 </div>
                 <div style={{ overflowX: 'auto' }}>
-                  <div style={{ minWidth: 1240 }}>
+                  <div style={{ minWidth: 1480 }}>
                     <div style={{
                       display: 'grid', gridTemplateColumns: BLOTTER_GRID, gap: 12,
                       padding: '10px 16px', borderBottom: '1px solid ' + C.line,
@@ -1016,7 +1016,15 @@ export default function Page() {
                             }}
                           >
                             <StatusIcon kind={ph.icon} color={ph.tone} />
-                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ph.label}</span>
+                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {ph.label}
+                              {(e.phase === 'rejected' || e.phase === 'nack') && e.reason && (
+                                <>
+                                  <span style={{ color: ph.tone }}>;</span>
+                                  <span style={{ color: C.sub }}> {e.reason}</span>
+                                </>
+                              )}
+                            </span>
                           </div>
                         </div>
                       );
@@ -1028,24 +1036,6 @@ export default function Page() {
                     )}
                   </div>
                 </div>
-                {Object.values(execs).some(e => e.reason && TERMINAL[e.phase]) && (
-                  <div style={{ borderTop: '1px solid ' + C.line, padding: '4px 0' }}>
-                    {rows.map((row, i) => {
-                      const e = execs[row.id];
-                      if (!e || !e.reason || !TERMINAL[e.phase]) return null;
-                      return (
-                        <div key={row.id} style={{
-                          display: 'flex', gap: 12, alignItems: 'baseline', padding: '9px 16px',
-                          borderBottom: '1px solid ' + C.hair, fontSize: 13,
-                        }}>
-                          <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, minWidth: 52 }}>ROW {i + 1}</span>
-                          <span style={{ fontFamily: slab, fontSize: 11, color: C.red, minWidth: 74 }}>REJECTED</span>
-                          <span style={{ color: C.sub }}>{e.reason}</span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
               </div>
             )}
 
