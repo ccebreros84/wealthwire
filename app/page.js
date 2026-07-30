@@ -23,6 +23,10 @@ const GRID = GRID_COLUMNS.map(c => c.width).join(' ');
 
 // Blotter layout, mirroring the landing page: time, instrument, side, quantity,
 // filled, progress, avg price, bank, client, status.
+// Validate grid: # · sheet columns · validation comment · remove button
+const VALIDATE_GRID = '34px ' + GRID + ' minmax(250px, 1.15fr) 34px';
+const LABEL_BY_KEY = Object.fromEntries(COLUMNS.map(c => [c.key, c.label]));
+
 const BLOTTER_GRID = '76px 1.2fr 54px 92px 92px minmax(110px, 1fr) 84px 88px 112px minmax(300px, 1.5fr)';
 
 const card = { border: '1px solid ' + C.line, borderRadius: 10, background: C.panel };
@@ -85,6 +89,14 @@ const PHASE = {
   rejected: { label: 'Rejected',         tone: C.red,    icon: 'cross', bar: 0.05, barTone: C.red },
   filled:   { label: 'Filled',           tone: C.accent, icon: 'check', bar: 1,    barTone: C.accent },
 };
+
+function FilterMark({ color }) {
+  return (
+    <svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true" style={{ flexShrink: 0 }}>
+      <path d="M2.5 2.5 L 9.5 9.5 M 9.5 2.5 L 2.5 9.5" stroke={color} strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function StatusIcon({ kind, color }) {
   if (kind === 'check') {
@@ -272,6 +284,8 @@ export default function Page() {
   const [tick, setTick] = useState(0);
   const [filter, setFilter] = useState(null);           // null | 'BUY' | 'SELL' | 'REJECTED' | 'WARNINGS'
   const [flashBank, setFlashBank] = useState(false);
+  const [vFilter, setVFilter] = useState(null);        // null | 'errors' | 'warnings'
+  const [vFilterIds, setVFilterIds] = useState(null);  // frozen at click time
 
   const fileRef = useRef(null);
   const bankRef = useRef(null);
@@ -337,6 +351,28 @@ export default function Page() {
 
   const toggleFilter = key => setFilter(f => (f === key ? null : key));
 
+  // The filtered set is captured when the box is clicked rather than recomputed
+  // on every keystroke. Fixing a cell would otherwise make the row disappear
+  // mid-edit and take the cursor with it.
+  const toggleVFilter = kind => {
+    if (vFilter === kind) { setVFilter(null); setVFilterIds(null); return; }
+    const want = kind === 'errors' ? 'error' : 'warning';
+    const ids = new Set(
+      rows.filter(r => {
+        const ri = issues[r.id];
+        return Boolean(ri) && Object.values(ri).some(v => v.level === want);
+      }).map(r => r.id)
+    );
+    setVFilter(kind);
+    setVFilterIds(ids);
+  };
+
+  const validateRows = useMemo(() => {
+    const indexed = rows.map((row, i) => ({ row, i }));
+    if (!vFilter || !vFilterIds) return indexed;
+    return indexed.filter(({ row }) => vFilterIds.has(row.id));
+  }, [rows, vFilter, vFilterIds]);
+
   const take = useCallback(async file => {
     if (!file) return;
     setBusy(true);
@@ -362,7 +398,7 @@ export default function Page() {
   const reset = () => {
     setStep('start'); setRows([]); setFileName(''); setHeaderError(null); setBank('');
     setGate(false); setSent(false); setEmail(''); setGateBanks([]); setBankInput(''); setGateError('');
-    setSimState('idle'); setExecs({}); setDownloaded(''); setGateMode('access'); setFilter(null); setFlashBank(false);
+    setSimState('idle'); setExecs({}); setDownloaded(''); setGateMode('access'); setFilter(null); setFlashBank(false); setVFilter(null); setVFilterIds(null);
   };
 
   const openGate = (mode) => {
@@ -626,18 +662,43 @@ export default function Page() {
                 </div>
               </div>
               <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                <span style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5,
-                  color: errors ? C.red : C.accent, border: '1px solid ' + (errors ? C.red : C.accent) + '55',
-                  background: (errors ? C.red : C.accent) + '12', borderRadius: 6, padding: '6px 11px',
-                }}>
+                <button
+                  type="button"
+                  onClick={() => errors && toggleVFilter('errors')}
+                  aria-pressed={vFilter === 'errors'}
+                  title={errors ? (vFilter === 'errors' ? 'Show all rows' : 'Show only rows with blocking errors') : ''}
+                  style={{
+                    all: 'unset', boxSizing: 'border-box',
+                    display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5,
+                    color: errors ? C.red : C.accent,
+                    border: '1px solid ' + (errors ? C.red : C.accent) + (vFilter === 'errors' ? 'FF' : '55'),
+                    background: (errors ? C.red : C.accent) + (vFilter === 'errors' ? '26' : '12'),
+                    borderRadius: 6, padding: '6px 11px',
+                    cursor: errors ? 'pointer' : 'default',
+                    transition: 'background 0.15s ease, border-color 0.15s ease',
+                  }}
+                >
                   {errors ? errors + ' blocking error' + (errors === 1 ? '' : 's') : 'No blocking errors'}
-                </span>
+                  {vFilter === 'errors' && <FilterMark color={C.red} />}
+                </button>
                 {warnings > 0 && (
-                  <span style={{
-                    display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: C.amber,
-                    border: '1px solid ' + C.amber + '55', background: C.amber + '12', borderRadius: 6, padding: '6px 11px',
-                  }}>{warnings} warning{warnings === 1 ? '' : 's'}</span>
+                  <button
+                    type="button"
+                    onClick={() => toggleVFilter('warnings')}
+                    aria-pressed={vFilter === 'warnings'}
+                    title={vFilter === 'warnings' ? 'Show all rows' : 'Show only rows with warnings'}
+                    style={{
+                      all: 'unset', boxSizing: 'border-box',
+                      display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: C.amber,
+                      border: '1px solid ' + C.amber + (vFilter === 'warnings' ? 'FF' : '55'),
+                      background: C.amber + (vFilter === 'warnings' ? '26' : '12'),
+                      borderRadius: 6, padding: '6px 11px', cursor: 'pointer',
+                      transition: 'background 0.15s ease, border-color 0.15s ease',
+                    }}
+                  >
+                    {warnings} warning{warnings === 1 ? '' : 's'}
+                    {vFilter === 'warnings' && <FilterMark color={C.amber} />}
+                  </button>
                 )}
                 <button type="button" onClick={reset} style={ghost}>Start over</button>
                 <button
@@ -649,29 +710,57 @@ export default function Page() {
               </div>
             </div>
 
-            <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, lineHeight: 1.55, maxWidth: 780 }}>
-              Hard errors block routing, warnings do not. Edit any cell to fix it — the row revalidates as you type.
+            <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, lineHeight: 1.55, maxWidth: 820 }}>
+              Hard errors block routing, warnings do not. Edit any cell to fix it — the row revalidates as you type,
+              and the validation column on the right updates with it.
             </div>
+
+            {vFilter && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14,
+                padding: '9px 14px', borderRadius: 8,
+                border: '1px solid ' + (vFilter === 'errors' ? C.red : C.amber) + '55',
+                background: (vFilter === 'errors' ? C.red : C.amber) + '10',
+              }}>
+                <span style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.1em', color: vFilter === 'errors' ? C.red : C.amber }}>
+                  FILTERED · {vFilter === 'errors' ? 'BLOCKING ERRORS' : 'WARNINGS'}
+                </span>
+                <span style={{ fontSize: 13, color: C.sub }}>
+                  Showing {validateRows.length} of {rows.length} rows. Rows stay listed while you fix them, so nothing
+                  disappears mid-edit.
+                </span>
+                <button
+                  type="button" onClick={() => { setVFilter(null); setVFilterIds(null); }}
+                  style={{ ...btn, marginLeft: 'auto', padding: '6px 12px', fontSize: 12.5, fontWeight: 500, color: C.text, border: '1px solid ' + C.line }}
+                >
+                  Clear filter
+                </button>
+              </div>
+            )}
 
             <div style={{ ...card, overflow: 'hidden' }}>
               <div style={{ overflowX: 'auto' }}>
-                <div style={{ minWidth: 1080 }}>
+                <div style={{ minWidth: 1380 }}>
                   <div style={{
-                    display: 'grid', gridTemplateColumns: '34px ' + GRID + ' 34px', gap: 10,
+                    display: 'grid', gridTemplateColumns: VALIDATE_GRID, gap: 10,
                     padding: '10px 15px', borderBottom: '1px solid ' + C.line,
                     fontFamily: slab, fontSize: 10, letterSpacing: '0.09em', color: C.dim,
                   }}>
                     <div>#</div>
                     {GRID_COLUMNS.map(c => <div key={c.key} style={{ textAlign: c.align === 'right' ? 'right' : 'left' }}>{c.label.toUpperCase()}</div>)}
+                    <div>VALIDATION</div>
                     <div />
                   </div>
 
-                  {rows.map((row, i) => {
+                  {validateRows.map(({ row, i }) => {
                     const rowIssues = issues[row.id] || {};
-                    const bad = Object.values(rowIssues).some(v => v.level === 'error');
+                    const entries = Object.entries(rowIssues);
+                    const errs = entries.filter(([, v]) => v.level === 'error');
+                    const warns = entries.filter(([, v]) => v.level === 'warning');
+                    const bad = errs.length > 0;
                     return (
                       <div key={row.id} style={{
-                        display: 'grid', gridTemplateColumns: '34px ' + GRID + ' 34px', gap: 10,
+                        display: 'grid', gridTemplateColumns: VALIDATE_GRID, gap: 10,
                         padding: '4px 15px', borderBottom: '1px solid ' + C.hair, alignItems: 'center',
                         background: bad ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
                       }}>
@@ -701,6 +790,26 @@ export default function Page() {
                             />
                           );
                         })}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3, padding: '4px 0', minWidth: 0 }}>
+                          {!entries.length && <span style={{ fontSize: 12, color: C.dim }}>—</span>}
+                          {errs.concat(warns).map(([field, issue]) => (
+                            <span key={field} style={{
+                              display: 'flex', alignItems: 'baseline', gap: 6, fontSize: 11.5, lineHeight: 1.4,
+                              color: issue.level === 'error' ? C.red : C.amber,
+                            }}>
+                              <span style={{
+                                width: 5, height: 5, borderRadius: '50%', flexShrink: 0, marginTop: 5,
+                                background: issue.level === 'error' ? C.red : C.amber,
+                              }} />
+                              <span style={{ minWidth: 0 }}>
+                                <span style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.06em', color: C.dim, marginRight: 5 }}>
+                                  {(LABEL_BY_KEY[field] || field).toUpperCase()}
+                                </span>
+                                {issue.message}
+                              </span>
+                            </span>
+                          ))}
+                        </div>
                         <button
                           type="button" aria-label="Remove row"
                           onClick={() => setRows(rs => rs.filter(r => r.id !== row.id))}
@@ -711,30 +820,15 @@ export default function Page() {
                       </div>
                     );
                   })}
+                  {!validateRows.length && (
+                    <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13.5, color: C.muted }}>
+                      No rows with {vFilter === 'errors' ? 'blocking errors' : 'warnings'}.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
 
-            {(errors > 0 || warnings > 0) && (
-              <div style={{ ...card, marginTop: 16, padding: '4px 0' }}>
-                {rows.map((row, i) => {
-                  const rowIssues = issues[row.id];
-                  if (!rowIssues) return null;
-                  return Object.entries(rowIssues).map(([field, issue]) => (
-                    <div key={row.id + field} style={{
-                      display: 'flex', gap: 12, alignItems: 'baseline', padding: '9px 16px',
-                      borderBottom: '1px solid ' + C.hair, fontSize: 13,
-                    }}>
-                      <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, minWidth: 52 }}>ROW {i + 1}</span>
-                      <span style={{ color: issue.level === 'error' ? C.red : C.amber, minWidth: 68, fontFamily: slab, fontSize: 11 }}>
-                        {issue.level === 'error' ? 'ERROR' : 'WARNING'}
-                      </span>
-                      <span style={{ color: C.sub }}>{issue.message}</span>
-                    </div>
-                  ));
-                })}
-              </div>
-            )}
           </div>
         )}
 
