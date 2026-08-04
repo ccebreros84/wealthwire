@@ -157,6 +157,35 @@ function derivePhase(e, now) {
   return { phase: filled > 0 ? 'partial' : 'working', filled };
 }
 
+// Vocset attribution. Uses their own artwork from /vocset-logo.png, self-hosted
+// the same way wealthwire.ch does rather than hotlinked from vocset.com. Falls
+// back to a text wordmark if the file is missing, so the header never shows a
+// broken image.
+function VocsetMark() {
+  const [failed, setFailed] = useState(false);
+
+  if (failed) {
+    return (
+      <span style={{
+        fontFamily: slab, fontWeight: 700, fontSize: 12.5, letterSpacing: '0.05em',
+        color: C.sub, lineHeight: 1,
+      }}>
+        VOCSET
+      </span>
+    );
+  }
+
+  return (
+    /* eslint-disable-next-line @next/next/no-img-element */
+    <img
+      src="/vocset-logo.png"
+      alt="Vocset"
+      onError={() => setFailed(true)}
+      style={{ height: 17, width: 'auto', display: 'block' }}
+    />
+  );
+}
+
 // The WealthWire mark: skewed zigzag W crossed by the accent bar. The W picks
 // up currentColor so it inherits whatever text colour it sits in.
 function Logo({ size = 24 }) {
@@ -565,15 +594,22 @@ export default function Page() {
         backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + C.hair,
       }}>
         <div style={{ maxWidth: 1320, margin: '0 auto', padding: '13px 22px', display: 'flex', alignItems: 'center', gap: 18 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontFamily: slab, fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
-            <Logo />
-            <span>Wealth<span style={{ color: C.accent }}>Wire</span></span>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontFamily: slab, fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
+              <Logo />
+              <span>Wealth<span style={{ color: C.accent }}>Wire</span></span>
+            </div>
+            {/* Attribution, indented to sit under the wordmark rather than the mark. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingLeft: 33 }}>
+              <span style={{ fontSize: 11.5, color: C.dim }}>Powered by</span>
+              <VocsetMark />
+            </div>
           </div>
           <span style={{
             fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.accent,
             border: '1px solid ' + C.accent + '55', borderRadius: 5, padding: '3px 7px',
           }}>DEMO</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
             <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>NOTHING IS SENT TO ANY BANK</span>
             <a href="https://wealthwire.ch" style={{ fontSize: 13, color: C.sub }}>wealthwire.ch</a>
           </div>
