@@ -1306,7 +1306,7 @@ export default function Page() {
                   <button type="submit" disabled={sending} style={{ ...primary, padding: '14px 20px', fontSize: 15, opacity: sending ? 0.6 : 1 }}>
                     {sending
                       ? (gateMode === 'export' ? 'Preparing your file…' : 'Sending…')
-                      : (gateMode === 'export' ? 'Download your executions and request early access' : 'Request early access')}
+                      : (gateMode === 'export' ? 'Download your executions and request early access' : 'Connect my Custodian')}
                   </button>
 
                   {gateMode === 'access' && simState === 'idle' && (
