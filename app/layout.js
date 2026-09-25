@@ -15,7 +15,7 @@ export const metadata = {
   },
 };
 
-export const viewport = { themeColor: '#070B12' };
+export const viewport = { themeColor: '#F5F5F4' };
 
 export default function RootLayout({ children }) {
   return (
@@ -24,7 +24,7 @@ export default function RootLayout({ children }) {
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="" />
         <link
-          href="https://fonts.googleapis.com/css2?family=Epunda+Sans:ital,wght@0,300..900;1,300..900&family=Epunda+Slab:ital,wght@0,300..900;1,300..900&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@400..900&family=JetBrains+Mono:wght@400;500;700&display=swap"
           rel="stylesheet"
         />
         <link rel="icon" href="/favicon.ico" sizes="32x32" />

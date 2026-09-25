@@ -7,14 +7,17 @@ import {
   downloadExecutions, execStamp, hashString,
 } from '../lib/orders';
 
+// Swiss Grid palette: warm-neutral paper, ink, one signal red for the brand.
+// Green, amber and blue stay purely semantic (buy/filled, warning, in flight).
 const C = {
-  bg: '#070B12', panel: '#0D1421', line: '#1F2A3D', hair: '#141C2A',
-  text: '#E8EDF4', sub: '#A8B4C6', muted: '#8D99AC', dim: '#64708A',
-  accent: '#3CF08F', red: '#FF8C7F', amber: '#F0C25C', blue: '#5FA8FF',
+  bg: '#F5F5F4', panel: '#FFFFFF', line: '#C9CAC7', hair: '#E4E4E1',
+  text: '#111316', sub: '#3E4249', muted: '#5B5F66', dim: '#6B6F76',
+  accent: '#17804A', red: '#C42B22', amber: '#9A5B00', blue: '#1F5FBF',
+  ink: '#111316', brand: '#C42B22', paper: '#F5F5F4',
 };
-// Epunda Slab carries the data/label role the mono face used to hold: micro
-// labels, badges, tickers and figures. Tabular numerals come from globals.css.
-const slab = "'Epunda Slab', Georgia, serif";
+// JetBrains Mono carries the data/label layer: micro labels, badges, tickers
+// and figures. Tabular numerals come from globals.css.
+const slab = "'JetBrains Mono', ui-monospace, monospace";
 // Columns shown in the editable blotter. Asset class is parsed, validated and
 // exported as normal - it is only hidden from this grid for now.
 const HIDDEN_IN_GRID = ['assetClass'];
@@ -29,23 +32,16 @@ const LABEL_BY_KEY = Object.fromEntries(COLUMNS.map(c => [c.key, c.label]));
 
 const BLOTTER_GRID = '76px 1.2fr 54px 92px 92px minmax(110px, 1fr) 84px 88px 112px minmax(300px, 1.5fr)';
 
-const card = { border: '1px solid ' + C.line, borderRadius: 10, background: C.panel };
+const card = { border: '1px solid ' + C.line, borderRadius: 0, background: C.panel };
 const btn = {
   all: 'unset', boxSizing: 'border-box', cursor: 'pointer', textAlign: 'center',
-  padding: '12px 20px', borderRadius: 8, fontSize: 14, fontWeight: 600,
+  padding: '12px 20px', borderRadius: 0, fontSize: 14, fontWeight: 700,
 };
-const primary = { ...btn, background: C.accent, color: '#06090F' };
-const ghost = { ...btn, border: '1px solid ' + C.line, color: C.text, fontWeight: 500 };
-const glass = {
-  ...btn,
-  background: 'rgba(255, 255, 255, 0.06)',
-  border: '1px solid rgba(255, 255, 255, 0.16)',
-  backdropFilter: 'blur(10px)',
-  WebkitBackdropFilter: 'blur(10px)',
-  color: C.text,
-  fontWeight: 500,
-  boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.06)',
-};
+const primary = { ...btn, background: C.ink, color: C.paper };
+const ghost = { ...btn, border: '2px solid ' + C.ink, padding: '10px 18px', color: C.text, fontWeight: 700 };
+// Secondary action on the brand colour (kept under its old name so call sites
+// stay put).
+const glass = { ...btn, border: '2px solid ' + C.brand, padding: '10px 18px', color: C.brand, fontWeight: 700 };
 
 // Rejections a custodian could plausibly return for THIS order. Anything
 // side- or type-specific is only offered to orders it can actually apply to,
@@ -181,26 +177,28 @@ function VocsetMark() {
       src="/vocset-logo.png"
       alt="Vocset"
       onError={() => setFailed(true)}
-      style={{ height: 17, width: 'auto', display: 'block' }}
+      style={{ height: 17, width: 'auto', display: 'block', filter: 'brightness(0)', opacity: 0.8 }}
     />
   );
 }
 
-// The WealthWire mark: skewed zigzag W crossed by the accent bar. The W picks
-// up currentColor so it inherits whatever text colour it sits in.
-function Logo({ size = 24 }) {
+// The WealthWire mark, Swiss Grid edition: an upright W cut flat to the grid
+// on an ink tile, crossed by the signal-red wire.
+function Logo({ size = 28 }) {
   return (
     <svg
       width={size} height={size} viewBox="0 0 64 64" aria-hidden="true"
       style={{ display: 'block', flexShrink: 0 }}
     >
+      <defs><clipPath id="ww-mark-clip"><rect x="0" y="19" width="64" height="26" /></clipPath></defs>
+      <rect width="64" height="64" fill={C.ink} />
       <path
-        d="M12 25 L 22 43 L 32 25 L 42 43 L 52 25"
-        transform="translate(4.8,0) skewX(-8)"
-        fill="none" stroke="currentColor" strokeWidth="5.5"
-        strokeLinecap="butt" strokeLinejoin="miter" strokeMiterlimit="12"
+        clipPath="url(#ww-mark-clip)"
+        d="M11 15 L22 45 L32 17 L42 45 L53 15"
+        fill="none" stroke={C.paper} strokeWidth="6.2"
+        strokeLinecap="butt" strokeLinejoin="miter" strokeMiterlimit="20"
       />
-      <path d="M6 34 H 58" fill="none" stroke={C.accent} strokeWidth="5.5" strokeLinecap="butt" />
+      <rect x="6" y="30" width="52" height="4.4" fill={C.brand} />
     </svg>
   );
 }
@@ -214,11 +212,11 @@ function Stepper({ step }) {
         <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: i <= at ? 1 : 0.4 }}>
             <span style={{
-              width: 20, height: 20, borderRadius: '50%', display: 'grid', placeItems: 'center',
+              width: 22, height: 22, borderRadius: 0, display: 'grid', placeItems: 'center',
               fontFamily: slab, fontSize: 10,
-              border: '1px solid ' + (i <= at ? C.accent : C.line),
-              background: i < at ? C.accent : 'transparent',
-              color: i < at ? '#06090F' : (i === at ? C.accent : C.dim),
+              border: '2px solid ' + (i <= at ? C.ink : C.line),
+              background: i < at ? C.ink : 'transparent',
+              color: i < at ? C.paper : (i === at ? C.ink : C.dim),
             }}>{i < at ? '✓' : '0' + (i + 1)}</span>
             <span style={{ fontSize: 13, fontWeight: i === at ? 600 : 400, color: i === at ? C.text : C.muted }}>{label}</span>
           </div>
@@ -266,7 +264,7 @@ function Stat({ label, value, tone, sub, wide, onClick, active, disabled }) {
           </span>
         )}
       </div>
-      <div style={{ fontSize: wide ? 22 : 26, fontWeight: 600, lineHeight: 1.05, color: accent }}>{value}</div>
+      <div className="num" style={{ fontSize: wide ? 24 : 30, fontWeight: 800, letterSpacing: '-0.03em', lineHeight: 1.05, color: accent }}>{value}</div>
       {sub && <div style={{ fontFamily: slab, fontSize: 10, color: C.dim, marginTop: 6 }}>{sub}</div>}
     </>
   );
@@ -590,28 +588,28 @@ export default function Page() {
   return (
     <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <header style={{
-        position: 'sticky', top: 0, zIndex: 40, background: 'rgba(7, 11, 18, 0.85)',
-        backdropFilter: 'blur(14px)', borderBottom: '1px solid ' + C.hair,
+        position: 'sticky', top: 0, zIndex: 40, background: 'rgba(245, 245, 244, 0.94)',
+        backdropFilter: 'blur(14px)', borderBottom: '2px solid ' + C.ink,
       }}>
         <div style={{ maxWidth: 1320, margin: '0 auto', padding: '13px 22px', display: 'flex', alignItems: 'center', gap: 18 }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontFamily: slab, fontWeight: 700, fontSize: 18, letterSpacing: '-0.01em' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800, fontSize: 19, letterSpacing: '-0.02em' }}>
               <Logo />
-              <span>Wealth<span style={{ color: C.accent }}>Wire</span></span>
+              <span>WealthWire</span>
             </div>
             {/* Attribution, indented to sit under the wordmark rather than the mark. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingLeft: 33 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingLeft: 38 }}>
               <span style={{ fontSize: 11.5, color: C.dim }}>Powered by</span>
               <VocsetMark />
             </div>
           </div>
           <span style={{
-            fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.accent,
-            border: '1px solid ' + C.accent + '55', borderRadius: 5, padding: '3px 7px',
+            fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.paper, fontWeight: 700,
+            background: C.brand, padding: '4px 8px',
           }}>DEMO</span>
           <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
             <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>NOTHING IS SENT TO ANY BANK</span>
-            <a href="https://wealthwire.ch" style={{ fontSize: 13, color: C.sub }}>wealthwire.ch</a>
+            <a href="https://wealthwire.ch" style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>wealthwire.ch</a>
           </div>
         </div>
       </header>
@@ -622,7 +620,7 @@ export default function Page() {
         {step === 'start' && (
           <div style={{ animation: 'ww-in 0.4s ease both' }}>
             <div style={{ maxWidth: 700, marginBottom: 30 }}>
-              <h1 style={{ margin: '0 0 12px', fontSize: 'clamp(26px, 3.4vw, 38px)', letterSpacing: '-0.025em', lineHeight: 1.1 }}>
+              <h1 style={{ margin: '0 0 16px', fontSize: 'clamp(34px, 5vw, 64px)', letterSpacing: '-0.045em', lineHeight: 0.98 }}>
                 Take an order sheet all the way to filled.
               </h1>
               <p style={{ margin: 0, fontSize: 16, lineHeight: 1.55, color: C.sub }}>
@@ -643,7 +641,7 @@ export default function Page() {
                   {COLUMNS.map(c => (
                     <span key={c.key} style={{
                       fontFamily: slab, fontSize: 10.5, color: c.required ? C.sub : C.dim,
-                      border: '1px solid ' + C.line, borderRadius: 5, padding: '4px 7px',
+                      border: '1px solid ' + C.line, borderRadius: 0, padding: '4px 7px',
                     }}>{c.label}{c.required ? ' *' : ''}</span>
                   ))}
                 </div>
@@ -658,8 +656,8 @@ export default function Page() {
                 onDrop={e => { e.preventDefault(); setDragging(false); take(e.dataTransfer.files && e.dataTransfer.files[0]); }}
                 style={{
                   ...card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14,
-                  borderStyle: 'dashed', borderColor: dragging ? C.accent : C.line,
-                  background: dragging ? 'rgba(60, 240, 143, 0.05)' : C.panel,
+                  borderStyle: 'dashed', borderWidth: 2, borderColor: dragging ? C.brand : C.ink,
+                  background: dragging ? 'rgba(196, 43, 34, 0.05)' : C.panel,
                 }}
               >
                 <div style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 02</div>
@@ -669,7 +667,7 @@ export default function Page() {
                 </div>
                 {headerError && (
                   <div style={{
-                    display: 'flex', gap: 9, padding: '11px 13px', borderRadius: 7,
+                    display: 'flex', gap: 9, padding: '11px 13px', borderRadius: 0,
                     border: '1px solid ' + C.red + '55', background: C.red + '12', fontSize: 13, color: C.red, lineHeight: 1.5,
                   }}>{headerError}</div>
                 )}
@@ -709,7 +707,7 @@ export default function Page() {
                     color: errors ? C.red : C.accent,
                     border: '1px solid ' + (errors ? C.red : C.accent) + (vFilter === 'errors' ? 'FF' : '55'),
                     background: (errors ? C.red : C.accent) + (vFilter === 'errors' ? '26' : '12'),
-                    borderRadius: 6, padding: '6px 11px',
+                    borderRadius: 0, padding: '6px 11px',
                     cursor: errors ? 'pointer' : 'default',
                     transition: 'background 0.15s ease, border-color 0.15s ease',
                   }}
@@ -728,7 +726,7 @@ export default function Page() {
                       display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: C.amber,
                       border: '1px solid ' + C.amber + (vFilter === 'warnings' ? 'FF' : '55'),
                       background: C.amber + (vFilter === 'warnings' ? '26' : '12'),
-                      borderRadius: 6, padding: '6px 11px', cursor: 'pointer',
+                      borderRadius: 0, padding: '6px 11px', cursor: 'pointer',
                       transition: 'background 0.15s ease, border-color 0.15s ease',
                     }}
                   >
@@ -754,7 +752,7 @@ export default function Page() {
             {vFilter && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14,
-                padding: '9px 14px', borderRadius: 8,
+                padding: '9px 14px', borderRadius: 0,
                 border: '1px solid ' + (vFilter === 'errors' ? C.red : C.amber) + '55',
                 background: (vFilter === 'errors' ? C.red : C.amber) + '10',
               }}>
@@ -798,9 +796,9 @@ export default function Page() {
                       <div key={row.id} style={{
                         display: 'grid', gridTemplateColumns: VALIDATE_GRID, gap: 10,
                         padding: '4px 15px', borderBottom: '1px solid ' + C.hair, alignItems: 'center',
-                        background: bad ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
+                        background: bad ? 'rgba(196, 43, 34, 0.05)' : 'transparent',
                       }}>
-                        <div style={{ fontFamily: slab, fontSize: 11, color: bad ? C.red : '#4C5872' }}>{i + 1}</div>
+                        <div style={{ fontFamily: slab, fontSize: 11, color: bad ? C.red : C.dim }}>{i + 1}</div>
                         {GRID_COLUMNS.map(c => {
                           // An issue raised against a hidden column would have no cell to
                           // highlight, so it surfaces on Instrument instead.
@@ -817,7 +815,7 @@ export default function Page() {
                               style={{
                                 width: '100%', background: issue ? (issue.level === 'error' ? C.red + '1A' : C.amber + '14') : 'transparent',
                                 border: '1px solid ' + (issue ? (issue.level === 'error' ? C.red + '99' : C.amber + '77') : 'transparent'),
-                                borderRadius: 5, padding: '7px 8px', outline: 'none',
+                                borderRadius: 0, padding: '7px 8px', outline: 'none',
                                 color: issue ? (issue.level === 'error' ? C.red : C.amber) : (c.mono ? C.sub : C.text),
                                 fontFamily: c.mono ? slab : 'inherit',
                                 fontSize: c.mono ? 12 : 13,
@@ -932,11 +930,12 @@ export default function Page() {
                   ...card,
                   padding: 20,
                   marginBottom: 18,
-                  borderColor: flashBank ? C.amber : (bank ? C.line : C.accent + '66'),
-                  background: flashBank ? C.amber + '10' : (bank ? C.panel : 'rgba(60, 240, 143, 0.04)'),
+                  borderColor: flashBank ? C.amber : (bank ? C.line : C.ink),
+                  borderWidth: bank ? 1 : 2,
+                  background: flashBank ? C.amber + '10' : C.panel,
                   boxShadow: flashBank
                     ? '0 0 0 3px ' + C.amber + '33'
-                    : (bank ? 'none' : '0 0 0 1px ' + C.accent + '22'),
+                    : 'none',
                   transition: 'border-color 0.25s ease, background 0.25s ease, box-shadow 0.25s ease',
                 }}
               >
@@ -944,13 +943,13 @@ export default function Page() {
                   <>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8, flexWrap: 'wrap' }}>
                       <span style={{
-                        fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: '#06090F',
-                        background: C.accent, borderRadius: 5, padding: '4px 8px', fontWeight: 600,
+                        fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.paper,
+                        background: C.brand, borderRadius: 0, padding: '4px 8px', fontWeight: 700,
                       }}>
                         NEXT STEP · 1 OF 2
                       </span>
                       <span style={{
-                        fontFamily: slab, fontSize: 10, letterSpacing: '0.1em', color: C.accent,
+                        fontFamily: slab, fontSize: 10, letterSpacing: '0.1em', color: C.brand,
                         animation: 'ww-blip 1.8s ease-in-out infinite',
                       }}>
                         REQUIRED
@@ -966,8 +965,8 @@ export default function Page() {
                         <button
                           key={b} type="button" onClick={() => { setBank(b); setFlashBank(false); }}
                           style={{
-                            all: 'unset', cursor: 'pointer', padding: '11px 16px', borderRadius: 7, fontSize: 13.5,
-                            border: '1px solid ' + C.line, background: 'transparent', color: C.text,
+                            all: 'unset', cursor: 'pointer', padding: '11px 16px', borderRadius: 0, fontSize: 13.5,
+                            border: '2px solid ' + C.ink, background: C.panel, color: C.text, fontWeight: 600,
                             transition: 'border-color 0.15s ease, background 0.15s ease',
                           }}
                         >{b}</button>
@@ -982,7 +981,7 @@ export default function Page() {
                     </svg>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 600 }}>
-                        Routing to <span style={{ color: C.accent }}>{bank}</span>
+                        Routing to <span style={{ color: C.brand }}>{bank}</span>
                       </div>
                       <div style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.08em', color: C.dim, marginTop: 3 }}>
                         CUSTODIAN SELECTED · STEP 1 OF 2 DONE
@@ -1012,7 +1011,7 @@ export default function Page() {
             {filter && (
               <div style={{
                 display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 14,
-                padding: '10px 14px', borderRadius: 8,
+                padding: '10px 14px', borderRadius: 0,
                 border: '1px solid ' + (FILTER_TONE[filter] || C.accent) + '55',
                 background: (FILTER_TONE[filter] || C.accent) + '10',
               }}>
@@ -1053,7 +1052,7 @@ export default function Page() {
                         display: 'grid', gridTemplateColumns: '34px 1.2fr 124px 60px 90px 96px 110px 1fr', gap: 10,
                         padding: '10px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
                       }}>
-                        <div style={{ fontFamily: slab, fontSize: 11, color: '#4C5872' }}>{i + 1}</div>
+                        <div style={{ fontFamily: slab, fontSize: 11, color: C.dim }}>{i + 1}</div>
                         <div>{row.instrument}</div>
                         <div style={{ fontFamily: slab, fontSize: 11.5, color: C.muted }}>{row.isin}</div>
                         <div style={{ fontFamily: slab, fontSize: 11.5, color: row.side === 'SELL' ? C.red : C.accent }}>{row.side}</div>
@@ -1087,10 +1086,10 @@ export default function Page() {
                     {simState === 'running' && (
                       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                         <span style={{
-                          width: 6, height: 6, borderRadius: '50%', background: C.accent,
+                          width: 6, height: 6, borderRadius: '50%', background: C.brand,
                           animation: 'ww-blip 1.4s ease-in-out infinite',
                         }} />
-                        <span style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.12em', color: C.accent }}>LIVE</span>
+                        <span style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.12em', color: C.brand, fontWeight: 700 }}>LIVE</span>
                       </span>
                     )}
                     <span style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.12em', color: C.dim }}>
@@ -1121,7 +1120,7 @@ export default function Page() {
                         <div key={row.id} style={{
                           display: 'grid', gridTemplateColumns: BLOTTER_GRID, gap: 12,
                           padding: '11px 16px', borderBottom: '1px solid ' + C.hair, alignItems: 'center', fontSize: 13,
-                          background: e.phase === 'rejected' || e.phase === 'nack' ? 'rgba(255, 140, 127, 0.05)' : 'transparent',
+                          background: e.phase === 'rejected' || e.phase === 'nack' ? 'rgba(196, 43, 34, 0.05)' : 'transparent',
                           opacity: e.phase === 'queued' ? 0.6 : 1,
                           transition: 'opacity 0.3s ease, background 0.3s ease',
                         }}>
@@ -1133,10 +1132,10 @@ export default function Page() {
                           <div style={{ fontFamily: slab, fontSize: 12.5, color: C.sub }}>{fmtQty(e.target || 0)}</div>
                           <div style={{ fontFamily: slab, fontSize: 12.5, color: e.filledQty ? C.text : C.dim }}>{fmtQty(e.filledQty || 0)}</div>
                           <div>
-                            <span style={{ display: 'block', width: '100%', height: 3, background: C.hair, borderRadius: 2, overflow: 'hidden' }}>
+                            <span style={{ display: 'block', width: '100%', height: 3, background: C.hair, borderRadius: 0, overflow: 'hidden' }}>
                               <span style={{
                                 display: 'block', width: Math.round(barFrac * 100) + '%', height: '100%',
-                                background: ph.barTone, borderRadius: 2, transition: 'width 0.25s linear, background 0.25s ease',
+                                background: ph.barTone, borderRadius: 0, transition: 'width 0.25s linear, background 0.25s ease',
                               }} />
                             </span>
                           </div>
@@ -1229,18 +1228,18 @@ export default function Page() {
         <div
           onClick={e => { if (e.target === e.currentTarget && !sending) setGate(false); }}
           style={{
-            position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(4, 7, 12, 0.78)',
+            position: 'fixed', inset: 0, zIndex: 60, background: 'rgba(17, 19, 22, 0.55)',
             backdropFilter: 'blur(6px)', display: 'grid', placeItems: 'center', padding: 20,
           }}
         >
           <div style={{
-            ...card, width: '100%', maxWidth: 520, padding: 28, background: '#0B1220',
-            boxShadow: '0 40px 100px rgba(0,0,0,0.6)', animation: 'ww-in 0.25s ease both',
+            ...card, width: '100%', maxWidth: 520, padding: 32, background: C.panel,
+            border: '2px solid ' + C.ink, borderTop: '8px solid ' + C.brand, boxShadow: 'none', animation: 'ww-in 0.25s ease both',
             maxHeight: '90vh', overflowY: 'auto',
           }}>
             {!sent ? (
               <form onSubmit={submitLead}>
-                <div style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.14em', color: C.accent, marginBottom: 12 }}>
+                <div style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.14em', color: C.brand, fontWeight: 700, marginBottom: 12 }}>
                   {gateMode === 'export' ? 'YOUR EXECUTIONS ARE READY' : 'ONE STEP LEFT'}
                 </div>
                 <h3 style={{ margin: '0 0 10px', fontSize: 22, letterSpacing: '-0.02em' }}>
@@ -1257,19 +1256,19 @@ export default function Page() {
                     type="email" value={email} placeholder="Work email" autoFocus
                     onChange={e => { setEmail(e.target.value); setGateError(''); }}
                     style={{
-                      width: '100%', background: '#070B12', border: '1px solid ' + C.line, borderRadius: 8,
+                      width: '100%', background: C.panel, border: '2px solid ' + C.ink, borderRadius: 0,
                       padding: '13px 14px', fontSize: 15, color: C.text, outline: 'none',
                     }}
                   />
 
                   <div style={{
                     display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center', width: '100%',
-                    background: '#070B12', border: '1px solid ' + C.line, borderRadius: 8, padding: '9px 10px', minHeight: 46,
+                    background: C.panel, border: '2px solid ' + C.ink, borderRadius: 0, padding: '9px 10px', minHeight: 46,
                   }}>
                     {gateBanks.map(b => (
                       <span key={b} style={{
-                        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 8px 5px 11px', borderRadius: 6,
-                        background: C.accent + '1F', border: '1px solid ' + C.accent + '66', color: C.accent, fontSize: 13,
+                        display: 'inline-flex', alignItems: 'center', gap: 7, padding: '5px 8px 5px 11px', borderRadius: 0,
+                        background: C.ink, border: '1px solid ' + C.ink, color: C.paper, fontSize: 13,
                       }}>
                         {b}
                         <button type="button" aria-label="Remove" onClick={() => setGateBanks(list => list.filter(x => x !== b))} style={{ all: 'unset', cursor: 'pointer', lineHeight: 0 }}>
@@ -1296,7 +1295,7 @@ export default function Page() {
                     {BANKS.filter(b => !gateBanks.includes(b)).map(b => (
                       <button key={b} type="button" onClick={() => addBank(b)} style={{
                         all: 'unset', cursor: 'pointer', fontSize: 12, color: C.muted,
-                        border: '1px solid ' + C.line, borderRadius: 5, padding: '5px 9px',
+                        border: '1px solid ' + C.line, borderRadius: 0, padding: '5px 9px',
                       }}>+ {b}</button>
                     ))}
                   </div>
@@ -1363,7 +1362,7 @@ export default function Page() {
         </div>
       )}
 
-      <footer style={{ borderTop: '1px solid ' + C.hair, marginTop: 'auto' }}>
+      <footer style={{ borderTop: '2px solid ' + C.ink, marginTop: 'auto' }}>
         <div style={{
           maxWidth: 1320, margin: '0 auto', padding: '20px 22px', display: 'flex', flexWrap: 'wrap',
           gap: '10px 26px', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: C.dim,
