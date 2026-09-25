@@ -182,27 +182,16 @@ function VocsetMark() {
   );
 }
 
-// The WealthWire mark, Swiss Grid edition: an upright W cut flat to the grid
-// on an ink tile, with a horizontal cut through it (the wire).
+// The WealthWire mark: an ink square crossed edge to edge by a paper line
+// (the wire).
 function Logo({ size = 28 }) {
   return (
     <svg
       width={size} height={size} viewBox="0 0 64 64" aria-hidden="true"
       style={{ display: 'block', flexShrink: 0 }}
     >
-      <defs>
-        <clipPath id="ww-mark-clip">
-          <rect x="0" y="19" width="64" height="11" />
-          <rect x="0" y="34.4" width="64" height="10.6" />
-        </clipPath>
-      </defs>
       <rect width="64" height="64" fill={C.ink} />
-      <path
-        clipPath="url(#ww-mark-clip)"
-        d="M11 15 L22 45 L32 17 L42 45 L53 15"
-        fill="none" stroke={C.paper} strokeWidth="6.2"
-        strokeLinecap="butt" strokeLinejoin="miter" strokeMiterlimit="20"
-      />
+      <rect x="0" y="28.8" width="64" height="6.4" fill={C.paper} />
     </svg>
   );
 }
