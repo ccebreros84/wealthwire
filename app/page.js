@@ -745,7 +745,7 @@ export default function Page() {
             </div>
 
             <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, lineHeight: 1.55, maxWidth: 820 }}>
-              Hard errors block routing, warnings do not. Edit any cell to fix it — the row revalidates as you type,
+              Hard errors block routing, warnings do not. Edit any cell to fix it. The row revalidates as you type,
               and the validation column on the right updates with it.
             </div>
 
@@ -1195,8 +1195,8 @@ export default function Page() {
                 </button>
                 <span style={{ fontSize: 13, color: bank ? C.dim : C.amber }}>
                   {bank
-                    ? 'Step 2 of 2 · routing is disabled in this demo — nothing reaches ' + bank + '.'
-                    : 'Step 1 of 2 is still open — tap here to jump back to the custodian list.'}
+                    ? 'Step 2 of 2 · routing is disabled in this demo, so nothing reaches ' + bank + '.'
+                    : 'Step 1 of 2 is still open. Tap here to jump back to the custodian list.'}
                 </span>
               </div>
             )}
@@ -1248,7 +1248,7 @@ export default function Page() {
                 <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.55, color: C.sub }}>
                   {gateMode === 'export'
                     ? 'Your uploaded sheet, enriched with status, fills, prices and execution IDs. Leave your work email and the custodians you need, and you go on the early-access list.'
-                    : 'Live FIX sessions open with the first customers. Leave your work email and the custodians you need, and you go on the early-access list — we prioritise banks by what people ask for.'}
+                    : 'Live FIX sessions open with the first customers. Leave your work email and the custodians you need, and you go on the early-access list. We prioritise banks by what people ask for.'}
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -1334,13 +1334,13 @@ export default function Page() {
                       {downloaded
                         ? <>Your execution file <span style={{ fontFamily: slab, fontSize: 13, color: C.accent }}>{downloaded}</span> has downloaded. </>
                         : <>Your details are saved. </>}
-                      Thanks for getting on the waitlist — we'll be in touch before launch, and your basket of{' '}
+                      Thanks for getting on the waitlist. We'll be in touch before launch, and your basket of{' '}
                       {summary.total} order{summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly
                       which session to open first. Nothing was sent to any bank.
                     </>
                   ) : (
                     <>
-                      We'll be in touch before launch — and your basket of {summary.total} order
+                      We'll be in touch before launch, and your basket of {summary.total} order
                       {summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly which session to
                       open first. Nothing was sent to any bank.
                     </>
