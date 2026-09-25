@@ -645,9 +645,18 @@ export default function Page() {
                     }}>{c.label}{c.required ? ' *' : ''}</span>
                   ))}
                 </div>
-                <button type="button" onClick={downloadTemplate} style={{ ...ghost, marginTop: 'auto' }}>
-                  Download template (.xlsx)
-                </button>
+                <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button type="button" onClick={downloadTemplate} style={ghost}>
+                    Download template (.xlsx)
+                  </button>
+                  {/* A ready-made basket so visitors can try the flow without building a sheet. */}
+                  <a href="/wealthwire-test-orders.xlsx" download="wealthwire-test-orders.xlsx" style={{ ...glass, display: 'block' }}>
+                    Download test file (.xlsx)
+                  </a>
+                  <div style={{ fontSize: 12.5, lineHeight: 1.5, color: C.muted }}>
+                    204 sample orders with one deliberate error. Open it, then upload it on the right.
+                  </div>
+                </div>
               </div>
 
               <div
