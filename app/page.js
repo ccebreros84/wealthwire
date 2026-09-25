@@ -591,7 +591,7 @@ export default function Page() {
         position: 'sticky', top: 0, zIndex: 40, background: 'rgba(245, 245, 244, 0.94)',
         backdropFilter: 'blur(14px)', borderBottom: '2px solid ' + C.ink,
       }}>
-        <div style={{ maxWidth: 1320, margin: '0 auto', padding: '13px 22px', display: 'flex', alignItems: 'center', gap: 18 }}>
+        <div style={{ maxWidth: 1320, margin: '0 auto', padding: '13px 22px', display: 'flex', alignItems: 'center', gap: '10px 18px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, fontWeight: 800, fontSize: 19, letterSpacing: '-0.02em' }}>
               <Logo />
@@ -607,7 +607,7 @@ export default function Page() {
             fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.paper, fontWeight: 700,
             background: C.brand, padding: '4px 8px',
           }}>DEMO</span>
-          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 20, flexWrap: 'wrap' }}>
+          <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '6px 20px', flexWrap: 'wrap', minWidth: 0 }}>
             <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>NOTHING IS SENT TO ANY BANK</span>
             <a href="https://wealthwire.ch" style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>wealthwire.ch</a>
           </div>
