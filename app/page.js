@@ -1,11 +1,12 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   BANKS, COLUMNS, downloadTemplate, parseFile, validate, qty,
   priceFor, notionalOf, currencyBreakdown, fmtAmount, fmtCompact,
   downloadExecutions, execStamp, hashString,
 } from '../lib/orders';
+import { DICT, LANGS, issueText } from '../lib/i18n';
 
 // Swiss Grid palette: warm-neutral paper, ink, one signal red for the brand.
 // Green, amber and blue stay purely semantic (buy/filled, warning, in flight).
@@ -196,8 +197,34 @@ function Logo({ size = 28 }) {
   );
 }
 
-function Stepper({ step }) {
-  const steps = ['Upload', 'Validate', 'Confirm & route'];
+// EN / FR / IT / CH, set like the switcher on wealthwire.ch.
+function LangSwitch({ lang, onChange, label }) {
+  return (
+    <div role="group" aria-label={label} style={{ display: 'flex', alignItems: 'center', gap: 6, fontFamily: slab, fontSize: 13 }}>
+      {LANGS.map((l, i) => {
+        const on = l.code === lang;
+        return (
+          <Fragment key={l.code}>
+            {i > 0 && <span aria-hidden="true" style={{ color: C.line }}>/</span>}
+            <button
+              type="button" lang={l.htmlLang} aria-pressed={on} onClick={() => onChange(l.code)}
+              style={{
+                border: 0, background: 'none', cursor: 'pointer', padding: '4px 2px', font: 'inherit',
+                color: on ? C.ink : C.muted, fontWeight: on ? 700 : 400,
+                textDecoration: on ? 'underline' : 'none', textUnderlineOffset: 6, textDecorationThickness: 2,
+              }}
+            >
+              {l.label}
+            </button>
+          </Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function Stepper({ step, d }) {
+  const steps = [d.stepUpload, d.stepValidate, d.stepConfirm];
   const at = { start: 0, validate: 1, confirm: 2 }[step] ?? 0;
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
@@ -220,7 +247,7 @@ function Stepper({ step }) {
   );
 }
 
-function Stat({ label, value, tone, sub, wide, onClick, active, disabled }) {
+function Stat({ label, value, tone, sub, wide, onClick, active, disabled, d = DICT.en }) {
   const interactive = Boolean(onClick) && !disabled;
   const accent = tone || C.text;
 
@@ -269,7 +296,7 @@ function Stat({ label, value, tone, sub, wide, onClick, active, disabled }) {
       type="button"
       onClick={onClick}
       aria-pressed={Boolean(active)}
-      title={active ? 'Clear this filter' : 'Filter the blotter by ' + label.toLowerCase()}
+      title={active ? d.statClear : d.statFilter(label)}
       style={{
         font: 'inherit', margin: 0, appearance: 'none', WebkitAppearance: 'none',
         ...base, cursor: 'pointer', boxSizing: 'border-box', display: 'block', width: '100%',
@@ -288,6 +315,7 @@ export default function Page() {
   const [headerError, setHeaderError] = useState(null);
   const [dragging, setDragging] = useState(false);
   const [bank, setBank] = useState('');
+  const [lang, setLang] = useState('en');
 
   const [gate, setGate] = useState(false);
   const [gateMode, setGateMode] = useState('access');   // 'access' | 'export'
@@ -300,6 +328,25 @@ export default function Page() {
   const [downloaded, setDownloaded] = useState('');
 
   const [simState, setSimState] = useState('idle');     // 'idle' | 'running' | 'done'
+
+  // Language: ?lang= wins (so wealthwire.ch can link straight in), then the
+  // last choice on this device, else English.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search).get('lang');
+      const saved = window.localStorage.getItem('ww-lang');
+      const pick = [q, saved].find(v => v && DICT[v]);
+      if (pick) setLang(pick);
+    } catch { /* storage unavailable: stay on English */ }
+  }, []);
+  useEffect(() => {
+    const l = LANGS.find(x => x.code === lang);
+    document.documentElement.lang = l ? l.htmlLang : 'en';
+    try { window.localStorage.setItem('ww-lang', lang); } catch { /* ignore */ }
+  }, [lang]);
+  const d = DICT[lang] || DICT.en;
+  // The running simulation and its blotter stay in English on purpose.
+  const dc = simState === 'idle' ? d : DICT.en;
   const [execs, setExecs] = useState({});
   const [tick, setTick] = useState(0);
   const [filter, setFilter] = useState(null);           // null | 'BUY' | 'SELL' | 'REJECTED' | 'WARNINGS'
@@ -405,7 +452,7 @@ export default function Page() {
       if (result.rows.length) setStep('validate');
     } catch (err) {
       console.error(err);
-      setHeaderError('That file could not be read. Use .xlsx, .xls or .csv.');
+      setHeaderError({ code: 'fileUnreadable', message: 'That file could not be read. Use .xlsx, .xls or .csv.' });
       setRows([]);
     } finally {
       setBusy(false);
@@ -531,7 +578,7 @@ export default function Page() {
   const submitLead = async e => {
     e.preventDefault();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
-      setGateError('Enter a valid work email address.');
+      setGateError('emailInvalid');
       return;
     }
     const banks = bankInput.trim() && !gateBanks.includes(bankInput.trim()) ? [...gateBanks, bankInput.trim()] : gateBanks;
@@ -562,7 +609,7 @@ export default function Page() {
       }
       setSent(true);
     } catch (err) {
-      setGateError(err.message === 'Failed to fetch' ? 'Network problem. Try again.' : err.message);
+      setGateError(err.message === 'Failed to fetch' ? 'networkError' : err.message);
     } finally {
       setSending(false);
     }
@@ -573,10 +620,15 @@ export default function Page() {
     : (ccy.ccy ? 'NOTIONAL · ' + ccy.ccy + ' (MIXED)' : 'NOTIONAL');
 
   const notionalSub = !ccy.ccy
-    ? 'no currency data'
+    ? dc.notionalNone
     : ccy.dominant
-      ? Math.round(ccy.share * 100) + '% of basket · simulated'
-      : 'largest of ' + ccy.entries.length + ' currencies · ' + Math.round(ccy.share * 100) + '%';
+      ? dc.notionalShare(Math.round(ccy.share * 100))
+      : dc.notionalLargest(ccy.entries.length, Math.round(ccy.share * 100));
+
+  const headerErrorText = !headerError ? ''
+    : typeof d[headerError.code] === 'function' ? d[headerError.code](headerError.params || {})
+      : (d[headerError.code] || headerError.message || String(headerError));
+  const gateErrorText = gateError ? (typeof d[gateError] === 'string' ? d[gateError] : gateError) : '';
 
   return (
     <main style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -593,7 +645,7 @@ export default function Page() {
             </div>
             {/* Attribution, indented to sit under the wordmark rather than the mark. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 7, paddingLeft: 38 }}>
-              <span style={{ fontSize: 11.5, color: C.dim }}>Powered by</span>
+              <span style={{ fontSize: 11.5, color: C.dim }}>{d.poweredBy}</span>
               <VocsetMark />
             </div>
           </div>
@@ -602,34 +654,33 @@ export default function Page() {
             background: C.brand, padding: '5px 10px', justifySelf: 'center',
           }}>DEMO</span>
           <div className="ww-header-end" style={{ display: 'flex', alignItems: 'center', gap: '6px 20px', flexWrap: 'wrap', minWidth: 0 }}>
-            <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>NOTHING IS SENT TO ANY BANK</span>
+            <LangSwitch lang={lang} onChange={setLang} label={d.langLabel} />
+            <span style={{ fontFamily: slab, fontSize: 11, color: C.dim, letterSpacing: '0.08em' }}>{d.nothingSent}</span>
             <a href="https://wealthwire.ch" style={{ fontSize: 13, fontWeight: 600, color: C.ink }}>wealthwire.ch</a>
           </div>
         </div>
       </header>
 
       <div style={{ maxWidth: 1320, margin: '0 auto', padding: '26px 22px 80px', width: '100%', flex: 1 }}>
-        <div style={{ marginBottom: 26 }}><Stepper step={step} /></div>
+        <div style={{ marginBottom: 26 }}><Stepper step={step} d={d} /></div>
 
         {step === 'start' && (
           <div style={{ animation: 'ww-in 0.4s ease both' }}>
             <div style={{ maxWidth: 700, marginBottom: 30 }}>
               <h1 style={{ margin: '0 0 16px', fontSize: 'clamp(34px, 5vw, 64px)', letterSpacing: '-0.045em', lineHeight: 0.98 }}>
-                Take an order sheet all the way to filled.
+                {d.startTitle}
               </h1>
               <p style={{ margin: 0, fontSize: 16, lineHeight: 1.55, color: C.sub }}>
-                Download the template, fill it with your own orders, and upload it. WealthWire checks it the way it
-                would before sending anything over FIX. No sign-in, no data leaves this browser until you ask us to
-                get in touch.
+                {d.startBody}
               </p>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 18 }}>
               <div style={{ ...card, padding: 22, display: 'flex', flexDirection: 'column', gap: 14 }}>
-                <div style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 01</div>
-                <div style={{ fontSize: 17, fontWeight: 600 }}>Get the Excel template</div>
+                <div style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>{d.stepN(1)}</div>
+                <div style={{ fontSize: 17, fontWeight: 600 }}>{d.templateTitle}</div>
                 <div style={{ fontSize: 13.5, lineHeight: 1.55, color: C.muted }}>
-                  Nine columns, four example rows, and a sheet explaining every field and every check we run.
+                  {d.templateBody}
                 </div>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, margin: '2px 0 4px' }}>
                   {COLUMNS.map(c => (
@@ -641,14 +692,14 @@ export default function Page() {
                 </div>
                 <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <button type="button" onClick={downloadTemplate} style={ghost}>
-                    Download template (.xlsx)
+                    {d.templateButton}
                   </button>
                   {/* A ready-made basket so visitors can try the flow without building a sheet. */}
                   <a href="/wealthwire-test-orders.xlsx" download="wealthwire-test-orders.xlsx" style={{ ...glass, display: 'block' }}>
-                    Download test file (.xlsx)
+                    {d.testButton}
                   </a>
                   <div style={{ fontSize: 12.5, lineHeight: 1.5, color: C.muted }}>
-                    204 sample orders with one deliberate error. Open it, then upload it on the right.
+                    {d.testHelp}
                   </div>
                 </div>
               </div>
@@ -663,16 +714,16 @@ export default function Page() {
                   background: dragging ? 'rgba(196, 43, 34, 0.05)' : C.panel,
                 }}
               >
-                <div style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>STEP 02</div>
-                <div style={{ fontSize: 17, fontWeight: 600 }}>Upload your order sheet</div>
+                <div style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.dim }}>{d.stepN(2)}</div>
+                <div style={{ fontSize: 17, fontWeight: 600 }}>{d.uploadTitle}</div>
                 <div style={{ fontSize: 13.5, lineHeight: 1.55, color: C.muted }}>
-                  Drop the file here, or pick it from your machine. .xlsx, .xls and .csv all work.
+                  {d.uploadBody}
                 </div>
                 {headerError && (
                   <div style={{
                     display: 'flex', gap: 9, padding: '11px 13px', borderRadius: 0,
                     border: '1px solid ' + C.red + '55', background: C.red + '12', fontSize: 13, color: C.red, lineHeight: 1.5,
-                  }}>{headerError}</div>
+                  }}>{headerErrorText}</div>
                 )}
                 <input
                   ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }}
@@ -682,7 +733,7 @@ export default function Page() {
                   type="button" disabled={busy} onClick={() => fileRef.current && fileRef.current.click()}
                   style={{ ...primary, marginTop: 'auto', opacity: busy ? 0.6 : 1 }}
                 >
-                  {busy ? 'Reading ' + fileName + '…' : 'Choose file'}
+                  {busy ? d.uploadReading(fileName) : d.uploadChoose}
                 </button>
               </div>
             </div>
@@ -693,7 +744,7 @@ export default function Page() {
           <div style={{ animation: 'ww-in 0.4s ease both' }}>
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 18 }}>
               <div>
-                <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>Validate and review</h2>
+                <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>{d.validateTitle}</h2>
                 <div style={{ fontFamily: slab, fontSize: 11.5, color: C.dim }}>
                   {fileName} · {rows.length} ORDER{rows.length === 1 ? '' : 'S'}
                 </div>
@@ -703,7 +754,7 @@ export default function Page() {
                   type="button"
                   onClick={() => errors && toggleVFilter('errors')}
                   aria-pressed={vFilter === 'errors'}
-                  title={errors ? (vFilter === 'errors' ? 'Show all rows' : 'Show only rows with blocking errors') : ''}
+                  title={errors ? (vFilter === 'errors' ? d.showAllRows : d.showErrorRows) : ''}
                   style={{
                     all: 'unset', boxSizing: 'border-box',
                     display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5,
@@ -715,7 +766,7 @@ export default function Page() {
                     transition: 'background 0.15s ease, border-color 0.15s ease',
                   }}
                 >
-                  {errors ? errors + ' blocking error' + (errors === 1 ? '' : 's') : 'No blocking errors'}
+                  {errors ? d.errorsCount(errors) : d.noErrors}
                   {vFilter === 'errors' && <FilterMark color={C.red} />}
                 </button>
                 {warnings > 0 && (
@@ -723,7 +774,7 @@ export default function Page() {
                     type="button"
                     onClick={() => toggleVFilter('warnings')}
                     aria-pressed={vFilter === 'warnings'}
-                    title={vFilter === 'warnings' ? 'Show all rows' : 'Show only rows with warnings'}
+                    title={vFilter === 'warnings' ? d.showAllRows : d.showWarningRows}
                     style={{
                       all: 'unset', boxSizing: 'border-box',
                       display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: C.amber,
@@ -733,23 +784,22 @@ export default function Page() {
                       transition: 'background 0.15s ease, border-color 0.15s ease',
                     }}
                   >
-                    {warnings} warning{warnings === 1 ? '' : 's'}
+                    {d.warningsCount(warnings)}
                     {vFilter === 'warnings' && <FilterMark color={C.amber} />}
                   </button>
                 )}
-                <button type="button" onClick={reset} style={ghost}>Start over</button>
+                <button type="button" onClick={reset} style={ghost}>{d.startOver}</button>
                 <button
                   type="button" disabled={errors > 0 || !rows.length} onClick={() => setStep('confirm')}
                   style={{ ...primary, opacity: errors > 0 || !rows.length ? 0.35 : 1, cursor: errors > 0 ? 'not-allowed' : 'pointer' }}
                 >
-                  Continue to confirm
+                  {d.continueToConfirm}
                 </button>
               </div>
             </div>
 
             <div style={{ fontSize: 13, color: C.muted, marginBottom: 14, lineHeight: 1.55, maxWidth: 820 }}>
-              Hard errors block routing, warnings do not. Edit any cell to fix it. The row revalidates as you type,
-              and the validation column on the right updates with it.
+              {d.validateHelp}
             </div>
 
             {vFilter && (
@@ -760,17 +810,16 @@ export default function Page() {
                 background: (vFilter === 'errors' ? C.red : C.amber) + '10',
               }}>
                 <span style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.1em', color: vFilter === 'errors' ? C.red : C.amber }}>
-                  FILTERED · {vFilter === 'errors' ? 'BLOCKING ERRORS' : 'WARNINGS'}
+                  {d.filtered} · {vFilter === 'errors' ? d.filterErrors : d.filterWarnings}
                 </span>
                 <span style={{ fontSize: 13, color: C.sub }}>
-                  Showing {validateRows.length} of {rows.length} rows. Rows stay listed while you fix them, so nothing
-                  disappears mid-edit.
+                  {d.rowsShowing(validateRows.length, rows.length)}
                 </span>
                 <button
                   type="button" onClick={() => { setVFilter(null); setVFilterIds(null); }}
                   style={{ ...btn, marginLeft: 'auto', padding: '6px 12px', fontSize: 12.5, fontWeight: 500, color: C.text, border: '1px solid ' + C.line }}
                 >
-                  Clear filter
+                  {d.clearFilter}
                 </button>
               </div>
             )}
@@ -813,7 +862,7 @@ export default function Page() {
                             <input
                               key={c.key}
                               value={row[c.key]}
-                              title={issue ? issue.message : ''}
+                              title={issue ? issueText(d, issue) : ''}
                               onChange={e => setCell(row.id, c.key, e.target.value)}
                               style={{
                                 width: '100%', background: issue ? (issue.level === 'error' ? C.red + '1A' : C.amber + '14') : 'transparent',
@@ -842,13 +891,13 @@ export default function Page() {
                                 <span style={{ fontFamily: slab, fontSize: 10, letterSpacing: '0.06em', color: C.dim, marginRight: 5 }}>
                                   {(LABEL_BY_KEY[field] || field).toUpperCase()}
                                 </span>
-                                {issue.message}
+                                {issueText(d, issue)}
                               </span>
                             </span>
                           ))}
                         </div>
                         <button
-                          type="button" aria-label="Remove row"
+                          type="button" aria-label={d.removeRow}
                           onClick={() => setRows(rs => rs.filter(r => r.id !== row.id))}
                           style={{ all: 'unset', cursor: 'pointer', color: C.dim, lineHeight: 0, padding: 6 }}
                         >
@@ -859,7 +908,7 @@ export default function Page() {
                   })}
                   {!validateRows.length && (
                     <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13.5, color: C.muted }}>
-                      No rows with {vFilter === 'errors' ? 'blocking errors' : 'warnings'}.
+                      {vFilter === 'errors' ? d.noErrorRows : d.noWarningRows}
                     </div>
                   )}
                 </div>
@@ -874,18 +923,18 @@ export default function Page() {
             <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
               <div>
                 <h2 style={{ margin: '0 0 6px', fontSize: 22, letterSpacing: '-0.02em' }}>
-                  {simState === 'idle' ? 'Confirm and route' : simState === 'running' ? 'Routing simulation' : 'Execution report'}
+                  {simState === 'idle' ? dc.confirmTitle : simState === 'running' ? 'Routing simulation' : 'Execution report'}
                 </h2>
                 <div style={{ fontFamily: slab, fontSize: 11.5, color: C.dim }}>
                   {simState === 'idle'
-                    ? 'THE LAST SCREEN BEFORE ORDERS LEAVE THE BUILDING'
+                    ? dc.confirmSub
                     : simState === 'running'
                       ? 'SIMULATED FILLS · NOTHING REACHES ' + (bank || 'ANY BANK').toUpperCase()
                       : 'SIMULATED · ' + execStats.filled + ' FILLED · ' + execStats.rejected + ' REJECTED'}
                 </div>
               </div>
               {simState === 'idle' && (
-                <button type="button" onClick={() => setStep('validate')} style={{ ...ghost, marginLeft: 'auto' }}>Back to validation</button>
+                <button type="button" onClick={() => setStep('validate')} style={{ ...ghost, marginLeft: 'auto' }}>{dc.backToValidation}</button>
               )}
               {simState === 'done' && (
                 <button type="button" onClick={reset} style={{ ...ghost, marginLeft: 'auto' }}>Try another sheet</button>
@@ -902,11 +951,11 @@ export default function Page() {
               />
               <Stat label="ORDERS" value={summary.total} />
               <Stat
-                label="BUY" value={summary.buys} tone={C.accent}
+                d={dc} label="BUY" value={summary.buys} tone={C.accent}
                 onClick={() => toggleFilter('BUY')} active={filter === 'BUY'} disabled={!summary.buys}
               />
               <Stat
-                label="SELL" value={summary.sells} tone={C.red}
+                d={dc} label="SELL" value={summary.sells} tone={C.red}
                 onClick={() => toggleFilter('SELL')} active={filter === 'SELL'} disabled={!summary.sells}
               />
               <Stat label="INSTRUMENTS" value={summary.instruments} />
@@ -914,13 +963,13 @@ export default function Page() {
               {simState === 'idle'
                 ? (
                   <Stat
-                    label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text}
+                    d={dc} label="WARNINGS" value={warnings} tone={warnings ? C.amber : C.text}
                     onClick={() => toggleFilter('WARNINGS')} active={filter === 'WARNINGS'} disabled={!warnings}
                   />
                 )
                 : (
                   <Stat
-                    label="REJECTED" value={execStats.rejected} tone={execStats.rejected ? C.red : C.text}
+                    d={dc} label="REJECTED" value={execStats.rejected} tone={execStats.rejected ? C.red : C.text}
                     onClick={() => toggleFilter('REJECTED')} active={filter === 'REJECTED'} disabled={!execStats.rejected}
                   />
                 )}
@@ -949,19 +998,18 @@ export default function Page() {
                         fontFamily: slab, fontSize: 10, letterSpacing: '0.12em', color: C.paper,
                         background: C.brand, borderRadius: 0, padding: '4px 8px', fontWeight: 700,
                       }}>
-                        NEXT STEP · 1 OF 2
+                        {dc.bankNext}
                       </span>
                       <span style={{
                         fontFamily: slab, fontSize: 10, letterSpacing: '0.1em', color: C.brand,
                         animation: 'ww-blip 1.8s ease-in-out infinite',
                       }}>
-                        REQUIRED
+                        {dc.bankRequired}
                       </span>
                     </div>
-                    <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>Pick the custodian for this basket</div>
+                    <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 6 }}>{dc.bankTitle}</div>
                     <div style={{ fontSize: 13, color: C.sub, marginBottom: 16, maxWidth: 640, lineHeight: 1.55 }}>
-                      Choose the bank that holds these accounts. Routing stays locked until you do. In the live product
-                      this selects the FIX session; here it only tells us which bank you need first.
+                      {dc.bankBody}
                     </div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                       {BANKS.map(b => (
@@ -984,10 +1032,10 @@ export default function Page() {
                     </svg>
                     <div>
                       <div style={{ fontSize: 15, fontWeight: 600 }}>
-                        Routing to <span style={{ color: C.brand }}>{bank}</span>
+                        {dc.routingTo} <span style={{ color: C.brand }}>{bank}</span>
                       </div>
                       <div style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.08em', color: C.dim, marginTop: 3 }}>
-                        CUSTODIAN SELECTED · STEP 1 OF 2 DONE
+                        {dc.bankDone}
                       </div>
                     </div>
                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
@@ -996,14 +1044,14 @@ export default function Page() {
                           type="button" onClick={scrollToRoute}
                           style={{ ...glass, padding: '10px 16px', fontSize: 13 }}
                         >
-                          Jump to routing ↓
+                          {dc.jumpToRouting}
                         </button>
                       )}
                       <button
                         type="button" onClick={() => setBank('')}
                         style={{ ...btn, padding: '10px 14px', fontSize: 13, fontWeight: 500, color: C.muted, border: '1px solid ' + C.line }}
                       >
-                        Change
+                        {dc.change}
                       </button>
                     </div>
                   </div>
@@ -1022,14 +1070,13 @@ export default function Page() {
                   FILTERED · {filter}
                 </span>
                 <span style={{ fontSize: 13, color: C.sub }}>
-                  Showing {visible.length} of {rows.length} order{rows.length === 1 ? '' : 's'}.
-                  {' '}Exports and totals still cover the whole basket.
+                  {dc.ordersShowing(visible.length, rows.length)}
                 </span>
                 <button
                   type="button" onClick={() => setFilter(null)}
                   style={{ ...btn, marginLeft: 'auto', padding: '6px 12px', fontSize: 12.5, fontWeight: 500, color: C.text, border: '1px solid ' + C.line }}
                 >
-                  Clear filter
+                  {dc.clearFilter}
                 </button>
               </div>
             )}
@@ -1037,7 +1084,7 @@ export default function Page() {
             {simState === 'idle' ? (
               <div style={{ ...card, overflow: 'hidden', marginBottom: 22 }}>
                 <div style={{ padding: '12px 16px', borderBottom: '1px solid ' + C.line, fontSize: 13.5, fontWeight: 600 }}>
-                  Orders in this basket
+                  {dc.ordersInBasket}
                 </div>
                 <div style={{ overflowX: 'auto' }}>
                   <div style={{ minWidth: 860 }}>
@@ -1067,7 +1114,7 @@ export default function Page() {
                     ))}
                     {!visible.length && (
                       <div style={{ padding: '28px 16px', textAlign: 'center', fontSize: 13.5, color: C.muted }}>
-                        No {FILTER_LABEL[filter] || 'matching orders'} in this basket.
+                        {dc.noneFiltered[filter] || dc.noneFiltered.DEFAULT}
                       </div>
                     )}
                   </div>
@@ -1193,13 +1240,13 @@ export default function Page() {
                   }}
                 >
                   {bank
-                    ? 'Route ' + summary.total + ' order' + (summary.total === 1 ? '' : 's') + ' via FIX'
-                    : 'Pick a custodian to unlock routing'}
+                    ? dc.routeButton(summary.total)
+                    : dc.routeLocked}
                 </button>
                 <span style={{ fontSize: 13, color: bank ? C.dim : C.amber }}>
                   {bank
-                    ? 'Step 2 of 2 · routing is disabled in this demo, so nothing reaches ' + bank + '.'
-                    : 'Step 1 of 2 is still open. Tap here to jump back to the custodian list.'}
+                    ? dc.routeHint(bank)
+                    : dc.routeHintOpen}
                 </span>
               </div>
             )}
@@ -1243,20 +1290,20 @@ export default function Page() {
             {!sent ? (
               <form onSubmit={submitLead}>
                 <div style={{ fontFamily: slab, fontSize: 10.5, letterSpacing: '0.14em', color: C.brand, fontWeight: 700, marginBottom: 12 }}>
-                  {gateMode === 'export' ? 'YOUR EXECUTIONS ARE READY' : 'ONE STEP LEFT'}
+                  {gateMode === 'export' ? d.gateKickerExport : d.gateKicker}
                 </div>
                 <h3 style={{ margin: '0 0 10px', fontSize: 22, letterSpacing: '-0.02em' }}>
-                  {gateMode === 'export' ? 'Take the execution file with you.' : 'Your basket is ready to route.'}
+                  {gateMode === 'export' ? d.gateTitleExport : d.gateTitle}
                 </h3>
                 <p style={{ margin: '0 0 20px', fontSize: 14, lineHeight: 1.55, color: C.sub }}>
                   {gateMode === 'export'
-                    ? 'Your uploaded sheet, enriched with status, fills, prices and execution IDs. Leave your work email and the custodians you need, and you go on the early-access list.'
-                    : 'Live FIX sessions open with the first customers. Leave your work email and the custodians you need, and you go on the early-access list. We prioritise banks by what people ask for.'}
+                    ? d.gateBodyExport
+                    : d.gateBody}
                 </p>
 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <input
-                    type="email" value={email} placeholder="Work email" autoFocus
+                    type="email" value={email} placeholder={d.emailPlaceholder} aria-label={d.emailPlaceholder} autoFocus
                     onChange={e => { setEmail(e.target.value); setGateError(''); }}
                     style={{
                       width: '100%', background: C.panel, border: '2px solid ' + C.ink, borderRadius: 0,
@@ -1274,14 +1321,15 @@ export default function Page() {
                         background: C.ink, border: '1px solid ' + C.ink, color: C.paper, fontSize: 13,
                       }}>
                         {b}
-                        <button type="button" aria-label="Remove" onClick={() => setGateBanks(list => list.filter(x => x !== b))} style={{ all: 'unset', cursor: 'pointer', lineHeight: 0 }}>
+                        <button type="button" aria-label={d.removeBank + ' ' + b} onClick={() => setGateBanks(list => list.filter(x => x !== b))} style={{ all: 'unset', cursor: 'pointer', lineHeight: 0 }}>
                           <svg width="11" height="11" viewBox="0 0 12 12"><path d="M2.5 2.5 L 9.5 9.5 M 9.5 2.5 L 2.5 9.5" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" /></svg>
                         </button>
                       </span>
                     ))}
                     <input
                       value={bankInput}
-                      placeholder={gateBanks.length ? 'Another bank…' : 'Which custodian banks?'}
+                      placeholder={gateBanks.length ? d.banksPlaceholderMore : d.banksPlaceholder}
+                      aria-label={d.banksPlaceholder}
                       onChange={e => setBankInput(e.target.value)}
                       onKeyDown={e => {
                         if (e.key === 'Enter' || e.key === 'Tab') {
@@ -1303,22 +1351,22 @@ export default function Page() {
                     ))}
                   </div>
 
-                  {gateError && <div style={{ fontSize: 13, color: C.red }}>{gateError}</div>}
+                  {gateError && <div role="alert" style={{ fontSize: 13, color: C.red }}>{gateErrorText}</div>}
 
                   <button type="submit" disabled={sending} style={{ ...primary, padding: '14px 20px', fontSize: 15, opacity: sending ? 0.6 : 1 }}>
                     {sending
-                      ? (gateMode === 'export' ? 'Preparing your file…' : 'Sending…')
-                      : (gateMode === 'export' ? 'Download executions and connect my custodian' : 'Connect my custodian')}
+                      ? (gateMode === 'export' ? d.sendingExport : d.sending)
+                      : (gateMode === 'export' ? d.submitExport : d.submit)}
                   </button>
 
                   {gateMode === 'access' && simState === 'idle' && (
                     <button type="button" onClick={startSimulation} style={{ ...glass, padding: '13px 20px', fontSize: 14 }}>
-                      Simulate Trades
+                      {d.simulate}
                     </button>
                   )}
 
                   <button type="button" onClick={() => setGate(false)} style={{ ...btn, color: C.dim, fontSize: 13, fontWeight: 400, padding: '4px 0' }}>
-                    Not now
+                    {d.notNow}
                   </button>
                 </div>
               </form>
@@ -1329,35 +1377,31 @@ export default function Page() {
                     <circle cx="11" cy="11" r="10" fill="none" stroke={C.accent} strokeWidth="1.5" />
                     <path d="M6.5 11.5 L 9.5 14.5 L 15.5 8" fill="none" stroke={C.accent} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
-                  <h3 style={{ margin: 0, fontSize: 21, letterSpacing: '-0.02em' }}>You're on the list.</h3>
+                  <h3 style={{ margin: 0, fontSize: 21, letterSpacing: '-0.02em' }}>{d.doneTitle}</h3>
                 </div>
                 <p style={{ margin: '0 0 22px', fontSize: 14.5, lineHeight: 1.6, color: C.sub }}>
                   {gateMode === 'export' ? (
                     <>
                       {downloaded
-                        ? <>Your execution file <span style={{ fontFamily: slab, fontSize: 13, color: C.accent }}>{downloaded}</span> has downloaded. </>
-                        : <>Your details are saved. </>}
-                      Thanks for getting on the waitlist. We'll be in touch before launch, and your basket of{' '}
-                      {summary.total} order{summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly
-                      which session to open first. Nothing was sent to any bank.
+                        ? <>{d.doneFileBefore} <span style={{ fontFamily: slab, fontSize: 13, color: C.accent }}>{downloaded}</span> {d.doneFileAfter} </>
+                        : <>{d.doneSaved} </>}
+                      {d.doneExport(summary.total, bank || d.yourCustodian)}
                     </>
                   ) : (
                     <>
-                      We'll be in touch before launch, and your basket of {summary.total} order
-                      {summary.total === 1 ? '' : 's'} for {bank || 'your custodian'} told us exactly which session to
-                      open first. Nothing was sent to any bank.
+                      {d.doneAccess(summary.total, bank || d.yourCustodian)}
                     </>
                   )}
                 </p>
                 <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
                   {gateMode === 'access' && simState === 'idle' && (
-                    <button type="button" onClick={startSimulation} style={{ ...glass, padding: '12px 18px' }}>Simulate Trades</button>
+                    <button type="button" onClick={startSimulation} style={{ ...glass, padding: '12px 18px' }}>{d.simulate}</button>
                   )}
                   {gateMode === 'export' && (
-                    <button type="button" onClick={() => setGate(false)} style={{ ...ghost }}>Back to the blotter</button>
+                    <button type="button" onClick={() => setGate(false)} style={{ ...ghost }}>{d.backToBlotter}</button>
                   )}
-                  <button type="button" onClick={reset} style={primary}>Try another sheet</button>
-                  <a href="https://wealthwire.ch" style={{ ...ghost, display: 'inline-block' }}>Back to wealthwire.ch</a>
+                  <button type="button" onClick={reset} style={primary}>{d.tryAnother}</button>
+                  <a href="https://wealthwire.ch" style={{ ...ghost, display: 'inline-block' }}>{d.backToSite}</a>
                 </div>
               </div>
             )}
@@ -1370,7 +1414,7 @@ export default function Page() {
           maxWidth: 1320, margin: '0 auto', padding: '20px 22px', display: 'flex', flexWrap: 'wrap',
           gap: '10px 26px', alignItems: 'center', justifyContent: 'space-between', fontSize: 12.5, color: C.dim,
         }}>
-          <div>© {new Date().getFullYear()} WealthWire · a demo, not a trading system</div>
+          <div>© {new Date().getFullYear()} WealthWire · {d.footer}</div>
           <a href="https://wealthwire.ch" style={{ color: C.muted }}>wealthwire.ch</a>
         </div>
       </footer>
