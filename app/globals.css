@@ -46,6 +46,14 @@ input::placeholder { color: #767A80; }
 
 :focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
 
+/* Header: brand left, DEMO badge dead centre, status and link right. */
+.ww-header-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 10px 18px; }
+.ww-header-end { justify-content: flex-end; }
+@media (max-width: 767px) {
+  .ww-header-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .ww-header-end { grid-column: 1 / -1; justify-content: flex-start; }
+}
+
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-thumb { background: #C9CAC7; }
 ::-webkit-scrollbar-track { background: transparent; }
